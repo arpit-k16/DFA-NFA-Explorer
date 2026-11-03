@@ -17,7 +17,8 @@ export default function({data, parentElement}) {
   // Save local view across unrelated Streamlit rerenders. A new run has a new key.
   const saved = root._playerState || {step:0, positions:null, view:[0,0,1000,460], layout:'Layered'};
   let current = Math.min(saved.step,n), playing=false, timer=null, disposed=false;
-  let positions = saved.positions, view = [...saved.view], selected=null, drag=null;
+  let positions = saved.positions, view = [...saved.view], selected=null, drag=null, touchEdit=false;
+  let verticalLayout=Boolean(saved.verticalLayout), manuallyPositioned=Boolean(saved.manuallyPositioned);
   root.replaceChildren();
   const toolbar = el('div',{class:'toolbar'});
   const button = (label, title, action, cls='') => {
@@ -49,12 +50,20 @@ export default function({data, parentElement}) {
   for(const name of ['Layered','Circular']) {
     const option=el('option',{},name); option.selected=name===saved.layout; layout.append(option);
   }
-  layout.onchange=()=>{positions=null; arrange(); fit(); draw(); persist()};
+  layout.onchange=()=>{positions=null;manuallyPositioned=false;arrange();fit();draw();persist()};
   tools.append(layout,button('+','Zoom in',()=>zoom(.8)),button('−','Zoom out',()=>zoom(1.25)),
     button('Fit','Fit graph to view',()=>{fit();draw();persist()}),
     button('Save SVG','Download diagram as SVG',downloadSvg),
     el('span',{class:'hint'},'Drag nodes · drag canvas to pan · scroll to zoom'));
   const stage=el('div',{class:'stage',tabindex:0,'aria-label':'Automaton. Space to play, arrow keys to step.'});
+  const touchButton=button('Move graph','Enable touch graph dragging',()=>{
+    touchEdit=!touchEdit;drag=null;
+    stage.classList.toggle('touch-edit',touchEdit);
+    touchButton.setAttribute('aria-pressed',String(touchEdit));
+    touchButton.textContent=touchEdit?'Done moving':'Move graph';
+  },'touch-mode');
+  touchButton.setAttribute('aria-pressed','false');
+  tools.append(touchButton);
   const svg=svgEl('svg',{class:'graph',role:'img','aria-label':'Interactive finite automaton'});
   stage.append(svg);
   const legend=el('div',{class:'legend'});
@@ -89,25 +98,29 @@ export default function({data, parentElement}) {
         positions[s]=m.states.length===1?[500,230]:[500+radius*Math.cos(angle),230+radius*Math.sin(angle)];
       });
     } else {
+      verticalLayout=root.clientWidth<480;
       const depth=new Map([[m.start,0]]), queue=[m.start];
       for(let i=0;i<queue.length;i++) {
         for(const [u,,v] of data.edges) if(u===queue[i]&&!depth.has(v)) {depth.set(v,depth.get(u)+1);queue.push(v)}
       }
       const last=Math.max(...depth.values(),0)+1, layers=new Map();
       for(const s of m.states){const d=depth.get(s)??last;if(!layers.has(d))layers.set(d,[]);layers.get(d).push(s)}
-      for(const [d,states] of layers) states.forEach((s,i)=>{positions[s]=[140+d*210,230+(i-(states.length-1)/2)*125]});
+      for(const [d,states] of layers) states.forEach((s,i)=>{
+        positions[s]=verticalLayout?[230+(i-(states.length-1)/2)*125,140+d*140]
+          :[140+d*210,230+(i-(states.length-1)/2)*125];
+      });
     }
   }
   function fit() {
     const points=Object.values(positions), xs=points.map(p=>p[0]), ys=points.map(p=>p[1]);
     const left=Math.min(...xs)-130, top=Math.min(...ys)-120;
-    const w=Math.max(550,Math.max(...xs)-Math.min(...xs)+260);
-    const h=Math.max(350,Math.max(...ys)-Math.min(...ys)+240);
+    const w=Math.max(320,Math.max(...xs)-Math.min(...xs)+260);
+    const h=Math.max(280,Math.max(...ys)-Math.min(...ys)+240);
     const ratio=(svg.clientWidth||1000)/(svg.clientHeight||460);
     const width=Math.max(w,h*ratio),height=width/ratio;
     view=[left-(width-w)/2,top-(height-h)/2,width,height];
   }
-  function persist(){root._playerState={step:current,positions,view:[...view],layout:layout.value}}
+  function persist(){root._playerState={step:current,positions,view:[...view],layout:layout.value,verticalLayout,manuallyPositioned}}
   function zoom(factor,point=null) {
     const width=Math.max(100,Math.min(12000,view[2]*factor)), scale=width/view[2];
     const p=point||[view[0]+view[2]/2,view[1]+view[3]/2];
@@ -146,12 +159,17 @@ export default function({data, parentElement}) {
       let path,lx,ly;
       if(g.u===g.v) {
         const spread=65+lane*38;
-        path=`M ${x-22} ${y-22} C ${x-spread} ${y-115-lane*40} ${x+spread} ${y-115-lane*40} ${x+22} ${y-22}`;
-        lx=x;ly=y-94-lane*30;
+        if(layout.value==='Layered'&&verticalLayout){
+          path=`M ${x+22} ${y-22} C ${x+115+lane*40} ${y-spread} ${x+115+lane*40} ${y+spread} ${x+22} ${y+22}`;
+          lx=x+94+lane*30;ly=y;
+        } else {
+          path=`M ${x-22} ${y-22} C ${x-spread} ${y-115-lane*40} ${x+spread} ${y-115-lane*40} ${x+22} ${y-22}`;
+          lx=x;ly=y-94-lane*30;
+        }
       } else {
         const dx=tx-x,dy=ty-y,len=Math.hypot(dx,dy)||1,ux=dx/len,uy=dy/len;
         // Long edges in layered layouts must route around intermediate states.
-        const skipBend=layout.value==='Layered'&&Math.abs(dx)>250?110*Math.sign(dx):0;
+        const skipBend=layout.value==='Layered'?(Math.abs(dx)>250?110*Math.sign(dx):Math.abs(dy)>200?-110*Math.sign(dy):0):0;
         const bend=(reverse?55:skipBend)+(lane-(siblings.length-1)/2)*55;
         const cx=(x+tx)/2-uy*bend,cy=(y+ty)/2+ux*bend;
         const l1=Math.hypot(cx-x,cy-y)||1,l2=Math.hypot(cx-tx,cy-ty)||1;
@@ -176,7 +194,11 @@ export default function({data, parentElement}) {
       const text=svgEl('text',{'text-anchor':'middle',dy:4});text.textContent=state;
       if(state.length>7){text.setAttribute('textLength',51);text.setAttribute('lengthAdjust','spacingAndGlyphs')}
       g.append(text);
-      g.onpointerdown=e=>{e.stopPropagation();stage.focus();selected=state;inspect();drag={state,origin:point(e)};svg.setPointerCapture(e.pointerId)};
+      g.onpointerdown=e=>{
+        e.stopPropagation();selected=state;inspect();
+        if(e.pointerType==='touch'&&!touchEdit)return;
+        stage.focus({preventScroll:true});drag={state,origin:point(e)};svg.setPointerCapture(e.pointerId);
+      };
       g.onkeydown=e=>{if(e.key==='Enter'){selected=state;inspect()}};
       svg.append(g);
     }
@@ -195,6 +217,9 @@ export default function({data, parentElement}) {
       tape.append(el('span',{class:'symbol'+cls,title:`Position ${i+1}`},symbol));
     });
     tapeFooter.textContent=`Read: ${symbols.slice(0,current).join('')||'ε'}  ·  Remaining: ${symbols.slice(current).join('')||'ε'}`;
+    // Keep the current symbol visible without scrolling the surrounding page.
+    const focusSymbol=tape.children[Math.min(current,Math.max(0,symbols.length-1))];
+    if(focusSymbol)tape.scrollLeft=Math.max(0,focusSymbol.offsetLeft-tape.offsetLeft-tape.clientWidth/2+focusSymbol.clientWidth/2);
     status.className='status'+(current===n?(data.accepted?' accepted':' rejected'):'');status.replaceChildren();
     status.append(el('strong',{},current===n?(data.accepted?'Accepted':'Rejected'):(current===0?'Ready to explore':`${step.after.length} live state${step.after.length===1?'':'s'}`)),
       el('div',{class:'detail'},current===n?data.explanation:step.note));
@@ -220,10 +245,10 @@ export default function({data, parentElement}) {
     const url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)],{type:'image/svg+xml'}));
     const link=el('a',{href:url,download:'automaton.svg'});link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
-  svg.onpointerdown=e=>{if(e.button!==0)return;stage.focus();drag={state:null,origin:point(e),view:[...view]};svg.setPointerCapture(e.pointerId)};
+  svg.onpointerdown=e=>{if(e.button!==0||(e.pointerType==='touch'&&!touchEdit))return;stage.focus({preventScroll:true});drag={state:null,origin:point(e),view:[...view]};svg.setPointerCapture(e.pointerId)};
   svg.onpointermove=e=>{
     if(!drag)return;const p=point(e);
-    if(drag.state){positions[drag.state]=p;draw()}
+    if(drag.state){manuallyPositioned=true;positions[drag.state]=p;draw()}
     else {view[0]+=drag.origin[0]-p[0];view[1]+=drag.origin[1]-p[1];svg.setAttribute('viewBox',view.join(' '))}
   };
   svg.onpointerup=svg.onpointercancel=e=>{drag=null;if(svg.hasPointerCapture(e.pointerId))svg.releasePointerCapture(e.pointerId);persist()};
@@ -235,5 +260,21 @@ export default function({data, parentElement}) {
     if(actions[e.key]){e.preventDefault();actions[e.key]()}
   };
   arrange();if(!saved.positions)fit();render();
-  return ()=>{disposed=true;clearTimeout(timer);persist()};
+  // Rotation, sidebar changes and hidden-tab reveals change the SVG aspect ratio.
+  // Refit the same positions while preserving the simulation and playback state.
+  let resizeFrame=null,lastSize='';
+  const observer=new ResizeObserver(()=>{
+    const width=svg.clientWidth,height=svg.clientHeight,size=`${width}:${height}`;
+    if(!width||!height||size===lastSize)return;
+    lastSize=size;cancelAnimationFrame(resizeFrame);
+    resizeFrame=requestAnimationFrame(()=>{
+      if(disposed)return;
+      if(layout.value==='Layered'&&!manuallyPositioned&&verticalLayout!==(root.clientWidth<480)){
+        positions=null;arrange();
+      }
+      fit();draw();persist();
+    });
+  });
+  observer.observe(svg);
+  return ()=>{disposed=true;clearTimeout(timer);cancelAnimationFrame(resizeFrame);observer.disconnect();persist()};
 }

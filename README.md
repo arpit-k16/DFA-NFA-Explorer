@@ -32,6 +32,18 @@ Open [localhost:8501](http://localhost:8501).
 - Export/import machine JSON. Download the graph as standalone SVG, the trace
   as CSV, and batch results as CSV.
 
+## Phones and tablets
+
+The simulator adapts to portrait and landscape, including narrow 320px screens.
+The layered graph runs vertically in narrow panels and horizontally in wider
+ones. Rotating the phone refits the graph without resetting the current step.
+Manually dragged state positions are preserved. Controls have 44px touch targets;
+long tapes and trace tables scroll within their own panels.
+
+Swipe over the graph to scroll the page. Tap **Move graph** to enable dragging
+states and panning, then **Done moving** to restore page scrolling. Use the +/−
+buttons to zoom and **Fit** to bring the whole graph back into view.
+
 ## Semantics and limits
 
 Alphabet symbols are single characters. States use comma/whitespace-separated
