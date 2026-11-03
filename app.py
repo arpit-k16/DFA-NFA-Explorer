@@ -17,7 +17,6 @@ st.set_page_config(page_title="DFA/NFA Explorer", page_icon=":material/hub:", la
 # Inline CCv2 component: source is kept separately for readability, passed as
 # trusted literal content. User strings only travel through the data channel.
 _ROOT = Path(__file__).parent
-st.html("<style>" + (_ROOT / "mobile.css").read_text(encoding="utf-8") + "</style>")
 _VISUALIZER = st.components.v2.component(
     "automata_player",
     html='<div class="automata-player"></div>\n',

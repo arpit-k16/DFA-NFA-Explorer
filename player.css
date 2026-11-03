@@ -1,7 +1,7 @@
-.automata-player {container-type:inline-size;min-width:0;max-width:100%;font-family:var(--st-font, sans-serif);color:var(--st-text-color,#172033);--line:var(--st-border-color,#dce3ee);--muted:#64748b;--accent:#4f46e5;--surface:var(--st-background-color,#fff);--soft:var(--st-secondary-background-color,#f6f8fc)}
+.automata-player {font-family:var(--st-font, sans-serif);color:var(--st-text-color,#172033);--line:var(--st-border-color,#dce3ee);--muted:#64748b;--accent:#4f46e5;--surface:var(--st-background-color,#fff);--soft:var(--st-secondary-background-color,#f6f8fc)}
 * {box-sizing:border-box}
 button,select,input {font:inherit}
-button,select {border:1px solid var(--line);border-radius:8px;background:var(--surface);color:inherit;padding:8px 12px;min-height:44px}
+button,select {border:1px solid var(--line);border-radius:8px;background:var(--surface);color:inherit;padding:8px 12px}
 button {cursor:pointer;transition:background .15s,transform .15s}
 button:hover:not(:disabled) {background:var(--soft)}
 button:focus-visible,select:focus-visible,input:focus-visible,.stage:focus-visible {outline:3px solid #a5b4fc;outline-offset:3px}
@@ -12,11 +12,10 @@ button.primary:hover:not(:disabled) {background:#4338ca}
 .toolbar {padding:14px 0}
 .speed {margin-left:auto;display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
 .scrub {display:flex;align-items:center;gap:16px;margin:0 0 16px;font-size:12px;color:var(--muted)}
-.scrub input {flex:1;accent-color:var(--accent);min-width:40px;height:44px;margin:0}
-.scrub span {white-space:nowrap;font-variant-numeric:tabular-nums}
+.scrub input {flex:1;accent-color:var(--accent);min-width:40px}
 .tape-panel {background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
 .eyebrow {font-size:10px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--muted);margin-bottom:10px}
-.tape {display:flex;gap:6px;overflow-x:auto;padding:3px 2px 10px;max-height:90px;overscroll-behavior-x:contain}
+.tape {display:flex;gap:6px;overflow-x:auto;padding:3px 2px 10px;max-height:90px}
 .symbol {flex:0 0 34px;height:40px;border:1px solid var(--line);border-radius:7px;display:grid;place-items:center;font:17px ui-monospace,monospace;background:var(--surface)}
 .symbol.read {color:#64748b;background:#e8edf7}
 .symbol.just {background:#e0e7ff;border-color:#6366f1;color:#3730a3;box-shadow:0 0 0 2px #c7d2fe}
@@ -56,52 +55,16 @@ svg.graph:active {cursor:grabbing}
 .status strong {display:block;font-size:15px;margin-bottom:6px}
 .status .detail {font-size:13px;line-height:1.6;overflow-wrap:anywhere}
 .states {display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
-.state-chip {font:12px ui-monospace,monospace;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:4px 7px;max-width:100%;overflow-wrap:anywhere}
+.state-chip {font:12px ui-monospace,monospace;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:4px 7px}
 .inspector {margin-top:10px;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 details {border:1px solid var(--line);border-radius:10px;margin-bottom:16px}
-summary {padding:12px 16px;cursor:pointer;font-size:13px;font-weight:600;min-height:44px}
-.trace-scroll {max-height:300px;overflow:auto;overscroll-behavior:contain;max-width:100%}
+summary {padding:12px 16px;cursor:pointer;font-size:13px;font-weight:600}
+.trace-scroll {max-height:300px;overflow:auto}
 table {border-collapse:collapse;width:100%;font-size:12px;text-align:left}
 th {position:sticky;top:0;background:var(--soft);color:var(--muted);font-weight:600}
 th,td {padding:10px 14px;border-top:1px solid var(--line)}
 tr.selected {background:#e0e7ff;color:#312e81}
 tbody tr {cursor:pointer}
 tbody tr:hover {background:var(--soft)}
-.touch-mode {display:none}
-.touch-mode[aria-pressed="true"] {background:#e0e7ff;border-color:#6366f1;color:#3730a3}
-@media(pointer:coarse), (max-width:640px) {
-  .touch-mode {display:inline-flex;align-items:center;justify-content:center}
-  svg.graph {touch-action:pan-y pinch-zoom}
-  .stage.touch-edit svg.graph {touch-action:none}
-}
-/* Container queries also cover a narrow desktop panel or an open sidebar. */
-@container(max-width:600px) {
-  .toolbar {display:grid;grid-template-columns:44px 44px minmax(80px,1fr) 44px 44px;gap:6px;padding:8px 0}
-  .toolbar > button {padding:8px 4px;min-width:0}
-  .speed {grid-column:1/-1;justify-self:end;margin:0}
-  .speed select {min-width:90px;font-size:16px}
-  .view-tools {gap:6px;padding:10px;display:grid;grid-template-columns:minmax(90px,1fr) 44px 44px 48px}
-  .view-tools select {width:100%;min-width:0;font-size:16px}
-  .view-tools button {padding:8px 4px}
-  .view-tools .hint {display:none}
-  .view-tools button[aria-label="Download diagram as SVG"] {grid-column:1/3}
-  .view-tools .touch-mode {grid-column:3/5;display:inline-flex;justify-content:center;align-items:center}
-  svg.graph {height:clamp(280px,48svh,420px)}
-  .scrub {gap:8px;margin-bottom:8px}
-  .tape-panel {padding:12px;margin-bottom:12px}
-  .legend {gap:8px 12px;font-size:11px}
-  .legend span {max-width:100%}
-  th,td {padding:10px;min-width:64px;overflow-wrap:anywhere}
-  table {min-width:510px}
-  .status {padding:12px;margin:12px 0}
-}
-/* Landscape phones need a shorter canvas even though they are fairly wide. */
-@media(orientation:landscape) and (max-height:600px) {
-  svg.graph {height:clamp(200px,62svh,330px)}
-  .toolbar {padding:6px 0}
-  .view-tools {padding:6px 10px}
-  .view-tools .hint {display:none}
-  .tape-panel {padding:10px;margin-bottom:10px}
-  .eyebrow {margin-bottom:6px}
-}
+@media(max-width:640px){svg.graph{height:350px}.speed{margin-left:0}.view-tools .hint{display:none}.toolbar{gap:5px}button{padding:8px 9px}.legend{gap:10px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
