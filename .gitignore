@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.streamlit/secrets.toml
+.cloud-attachments/
+.deliverable-build/
+deliverables/
+.env
+.env.*
+!.env.example
