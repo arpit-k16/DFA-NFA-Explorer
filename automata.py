@@ -455,36 +455,6 @@ def determinize(machine: dict, max_states: int = 128):
     return result, {name: subset for subset, name in subsets.items()}
 
 
-def minimize_dfa(machine: dict):
-    """Complete partial DFAs, remove unreachable states, and refine partitions."""
-    if machine["kind"] != "DFA":
-        raise ValueError("Convert the NFA to a DFA before minimizing it.")
-    dfa, original = determinize(machine)
-    finals = set(dfa["accepts"])
-    partitions = [p for p in (finals, set(dfa["states"]) - finals) if p]
-    while True:
-        block_of = {s: i for i, block in enumerate(partitions) for s in block}
-        refined = []
-        for block in partitions:
-            groups = {}
-            for state in sorted(block):
-                signature = tuple(block_of[dfa["trans"][state, a][0]] for a in dfa["alphabet"])
-                groups.setdefault(signature, set()).add(state)
-            refined.extend(groups.values())
-        if len(refined) == len(partitions):
-            break
-        partitions = refined
-    # Stable names: the start block is always M0.
-    partitions.sort(key=lambda block: (dfa["start"] not in block, min(block)))
-    names = {s: f"M{i}" for i, block in enumerate(partitions) for s in block}
-    result = {"kind": "DFA", "states": [f"M{i}" for i in range(len(partitions))],
-              "alphabet": dfa["alphabet"][:], "start": "M0",
-              "accepts": [f"M{i}" for i, b in enumerate(partitions) if b & finals],
-              "trans": {(f"M{i}", a): [names[dfa["trans"][next(iter(b)), a][0]]]
-                        for i, b in enumerate(partitions) for a in dfa["alphabet"]}}
-    mapping = {f"M{i}": frozenset(s for q in b for s in original[q])
-               for i, b in enumerate(partitions)}
-    return result, mapping
 
 
 def analyze_machine(machine: dict) -> dict:
