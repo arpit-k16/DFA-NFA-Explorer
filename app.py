@@ -9,7 +9,7 @@ import streamlit as st
 from gemini_generator import DEFAULT_MODEL, generate
 from computation_tree import accepting_path, build_tree, describe_path
 from regex_to_nfa import RegexError, regex_spec
-from question_solver import EXAMPLE_QUESTIONS, NotUnderstood, solve, solve_from_spec
+from question_solver import EXAMPLE_QUESTIONS, FinalAnswer, NotUnderstood, solve, solve_from_spec
 
 from automata import (
     EPS, PRESETS, DEFAULT_PRESET, analyze_machine, build_machine,
@@ -67,8 +67,13 @@ def ask_question(question, current):
     """Solve offline first; fall back to Gemini for unfamiliar languages."""
     st.session_state.pop("qa_result", None)
     st.session_state.pop("qa_error", None)
+    st.session_state.pop("qa_info", None)
     try:
         result = solve(question, current)
+    except FinalAnswer as answer:
+        # A definite answer (e.g. "not regular"): never ask the AI to invent a machine.
+        st.session_state.qa_info = str(answer)
+        return
     except NotUnderstood as offline_error:
         api_key = gemini_key()
         if not api_key:
@@ -181,15 +186,17 @@ with st.container(horizontal=True):
                  disabled=not question.strip()):
         ask_question(question, None if errors else machine)
         st.rerun()
-    if "qa_result" in st.session_state or "qa_error" in st.session_state:
+    if any(k in st.session_state for k in ("qa_result", "qa_error", "qa_info")):
         if st.button("Clear answer", icon=":material/close:"):
-            st.session_state.pop("qa_result", None)
-            st.session_state.pop("qa_error", None)
+            for k in ("qa_result", "qa_error", "qa_info"):
+                st.session_state.pop(k, None)
             st.rerun()
 with st.expander("Example questions"):
     for i, example in enumerate(EXAMPLE_QUESTIONS):
         st.button(example, key=f"example_{i}", on_click=use_example, args=(example,),
                   type="tertiary")
+if "qa_info" in st.session_state:
+    st.info(st.session_state.qa_info, icon=":material/info:")
 if "qa_error" in st.session_state:
     st.warning(st.session_state.qa_error)
 if "qa_result" in st.session_state:

@@ -21,7 +21,12 @@ where it gets stuck, and which branch accepts.
 - **Regular expression → ε-NFA** (Thompson's construction): `(a|b)*ab`,
   `(a+b)*abb`, `a?b`, `ε`.
 - **Ask a question** box: e.g. *"DFA over {0,1} for strings ending with 01 and
-  check 1101, 0110"*, *"Is 1101 accepted?"*, *"Convert this NFA to a DFA"*.
+  check 1101, 0110"*, *"Strings that do not contain consecutive 11"*, *"Strings that
+  start and end with the same symbol"*, *"NFA where the third symbol from the end is 1"*,
+  *"Every a is followed by b"*, *"DFA for (a+b)*abb"*, *"n_a(w) mod 3 = 1"*,
+  *"Is 1101 accepted?"*, *"Convert this NFA to a DFA"*. Requests for non-regular languages
+  (palindromes, aⁿbⁿ, equal numbers of a's and b's, ww …) are explained with a
+  pumping-lemma sketch instead of producing a wrong machine.
 - Test many strings at once (CSV download).
 - NFA → DFA conversion (subset construction).
 - Machine insights: reachable, unreachable and dead states, shortest accepted
@@ -136,11 +141,11 @@ The engine modules have no Streamlit dependency and can be imported on their own
 python -m unittest test_automata test_app test_gemini_generator test_question_solver test_computation_tree test_regex_to_nfa -v
 ```
 
-Expected: `Ran 32 tests … OK`. The tests cover all presets, ε-cycles, the empty
+Expected: `Ran 36 tests … OK`. The tests cover all presets, ε-cycles, the empty
 string, invalid and partial machines, JSON round trips, NFA→DFA equivalence on
 random ε-NFAs, the computation tree against the simulator, Thompson's
-construction against Python's `re`, the question solver against Python
-oracles, and the whole UI through Streamlit's AppTest. The Gemini tests mock the
+construction against Python's `re`, the question solver (55 phrasings, non-regular requests and error cases)
+against Python oracles, and the whole UI through Streamlit's AppTest. The Gemini tests mock the
 network, so no key is needed.
 
 ## Known limitations and troubleshooting
