@@ -1,139 +1,170 @@
-# DFA/NFA Explorer
+# DFA/NFA String Processing Visualizer — Group [Group ID]
 
-An interactive Streamlit workbench for deterministic finite automata (DFA) and
-nondeterministic finite automata with empty moves (ε-NFA).
+CSET302 Automata Theory and Computability · Simulator Project, Topic 7 · Milestone-II
 
-## Run
+## Overview
 
-Requires Python 3.10+.
+A browser-based simulator that animates how a DFA, NFA or ε-NFA processes an
+input string, symbol by symbol, and explains why the string is accepted or
+rejected. A separate computation-tree view shows every nondeterministic branch,
+where it gets stuck, and which branch accepts.
 
-```powershell
-python -m pip install -r requirements.txt
+## Supported features
+
+- Define a DFA or NFA/ε-NFA in a transition-table editor (Q, Σ, q₀, F, δ), or load
+  one of six examples.
+- Animated simulation: input tape, live state set, taken transitions, ε-closures,
+  play / pause / step / scrub / speed, keyboard shortcuts, step-by-step trace.
+- Acceptance/rejection verdict with a plain-language reason.
+- **Computation tree** tab: every branch of the run, marked ✗ stuck,
+  ✗ not final or ✓ accept, with the accepting path highlighted.
+- **Regular expression → ε-NFA** (Thompson's construction): `(a|b)*ab`,
+  `(a+b)*abb`, `a?b`, `ε`.
+- **Ask a question** box: e.g. *"DFA over {0,1} for strings ending with 01 and
+  check 1101, 0110"*, *"Is 1101 accepted?"*, *"Convert this NFA to a DFA"*.
+- Test many strings at once (CSV download).
+- NFA → DFA conversion (subset construction).
+- Machine insights: reachable, unreachable and dead states, shortest accepted
+  string, transition matrix.
+- Import/export machines as JSON; download the diagram as SVG and the trace as CSV.
+- Optional Google Gemini fallback for questions the offline solver does not
+  recognise.
+
+## Technology stack and dependencies
+
+| Component | Version tested | Requirement |
+|---|---|---|
+| Python | 3.13.18 | 3.10 or newer |
+| Streamlit | 1.67.0 | `>=1.64,<2` |
+| pandas | 3.0.5 | `>=2.0,<4` |
+| Browser | Chrome / Edge / Firefox / Safari (current) | JavaScript enabled |
+
+The animations (`player.js`, `tree.js`) use plain JavaScript and SVG, with no
+external JS libraries or CDN scripts. Works on Windows, macOS and Linux.
+
+## Installation
+
+1. Install Python 3.10+.
+2. Get the code:
+   ```bash
+   git clone https://github.com/arpit-k16/DFA-NFA-Explorer.git
+   cd DFA-NFA-Explorer
+   ```
+3. Install dependencies:
+   ```bash
+   python -m pip install -r requirements.txt
+   ```
+4. (Optional) For the Gemini fallback, create `.streamlit/secrets.toml` with
+   `GEMINI_API_KEY = "your-key"` or set the environment variable
+   `GEMINI_API_KEY`. This file is git-ignored; never commit a key.
+
+## How to run
+
+Entry point: `app.py`
+
+```bash
 python -m streamlit run app.py
 ```
 
-Open [localhost:8501](http://localhost:8501).
+Open http://localhost:8501.
 
-## Regular expression → ε-NFA
+## Example
 
-In the sidebar, open **Build from a regular expression**, type an expression
-such as `(a|b)*ab` and click **Build ε-NFA**. Thompson's construction turns each
-symbol, union (`|` or `+`), concatenation, star (`*`) and optional (`?`) into a
-small piece joined by ε-moves; `ε` is the empty string. The machine loads into
-the editor, the simulator and the computation tree like any other.
+Definition (preset *Ends with "01"*):
 
-## Computation tree
+| | |
+|---|---|
+| Type | DFA |
+| States | q0, q1, q2 |
+| Alphabet | 0, 1 |
+| Start / accepting | q0 / q2 |
+| δ | q0 –0→ q1, q0 –1→ q0, q1 –0→ q1, q1 –1→ q2, q2 –0→ q1, q2 –1→ q0 |
 
-The **Computation tree** tab animates every path the machine can take on the
-input string, symbol by symbol. Branches are never merged (unlike the state-set
-view in Simulate), so each nondeterministic choice and ε-move becomes its own
-branch. Live branches glow indigo, branches with no move are marked
-**✗ stuck**, branches that finish in a non-final state are marked
-**✗ not final**, and accepting branches are marked **✓ accept**, with the
-accepting path highlighted in green. The verdict explains how many branches
-accepted, died, or ended non-final, and one accepting path is printed in
-`q0 --a--> q1` form. Trees are capped at 400 nodes.
+Input `1101` → path q0 → q0 → q0 → q1 → q2 → **Accepted** ("The whole input was
+read. Final states: q2; at least one is accepting.")
+Input `0110` → path q0 → q1 → q2 → q0 → q1 → **Rejected**.
 
-## Ask a question
+Same machine as JSON (Import machine / Export machine):
 
-Type a question at the top of the page and click **Solve**. The built-in solver
-(`question_solver.py`) works offline, with no API key, for the common textbook
-patterns:
-
-- *ends with / starts with / contains / does not contain* a substring
-- *even/odd number of a's*, *number of a's divisible by k*, *exactly / at least /
-  at most n 1s*
-- *even/odd length*, *length at least / at most / exactly n*
-- *binary numbers divisible by n*
-- combinations with *and*, *or*, *not*
-- *… and check 1101, 0110* tests those strings on the new machine
-- questions about the loaded machine: *Is 1101 accepted?*, *Convert this NFA to a
-  DFA*, *Shortest accepted string*
-
-The answer shows the language, the DFA (or a classic NFA when one is
-asked for), the transition table, accepted/rejected verdicts with the state path,
-and example strings. The machine is loaded into the simulator automatically.
-Questions the rules don't recognize go to Gemini when `GEMINI_API_KEY` is set.
-
-## Generate with Gemini
-
-Create a Google Gemini API key and store it locally in `.streamlit/secrets.toml`
-(this file is excluded from Git):
-
-```toml
-GEMINI_API_KEY = "your-replacement-key"
+```json
+{"version": 1, "kind": "DFA", "states": ["q0", "q1", "q2"],
+ "alphabet": ["0", "1"], "start": "q0", "accepts": ["q2"],
+ "transitions": [{"from": "q0", "symbol": "0", "to": ["q1"]},
+                 {"from": "q0", "symbol": "1", "to": ["q0"]},
+                 {"from": "q1", "symbol": "0", "to": ["q1"]},
+                 {"from": "q1", "symbol": "1", "to": ["q2"]},
+                 {"from": "q2", "symbol": "0", "to": ["q1"]},
+                 {"from": "q2", "symbol": "1", "to": ["q0"]}]}
 ```
-
-Alternatively set the server environment variable `GEMINI_API_KEY`. Restart
-Streamlit after configuring it. `GEMINI_MODEL` optionally overrides the default
-`gemini-3.5-flash-lite` model; availability depends on your Google account.
-No additional Python dependency is needed.
-
-Enter a language description, click **Generate automaton**, review the
-interpretation and transition preview, then click **Use generated machine**.
-The existing simulator and Machine insights transition matrix use that machine.
-Descriptions are sent to Google. Credentials stay on the server and are sent
-only as the API authentication header. Never commit a key or paste it into chat.
-Revoke any key that has been exposed.
-
-Generated machines pass structural validation, which does not prove that they
-recognize the intended language. Test accepted and rejected examples. The model
-is instructed to flag ambiguity and nonregular languages, but can still make
-mistakes. Each request attempt has a 60-second timeout and bounded response/machine
-sizes. Temporary overload errors are retried twice with short delays.
-
-## Explore
-
-- Choose one of six examples or edit the machine in the sidebar. Add and remove
-  transition rows directly in the table. Multiple NFA targets use commas.
-- Enter a string, then play, pause, step, scrub, or jump to the result. Adjust
-  playback speed from 0.5× to 4×. Input or machine edits reset the run.
-- The tape, state set, exact transition highlights, and clickable trace stay in
-  sync. Consuming moves are indigo; empty moves are amber and dashed. Accepting
-  states have double rings and turn green when the completed run accepts.
-- Drag states, pan the canvas, scroll to zoom, fit the graph, or switch between
-  layered and circular layouts. Select a state to inspect its transitions.
-- With the canvas focused: Space plays/pauses, arrows step, Home restarts, and
-  End jumps to the result.
-- Test multiple strings, inspect a transition matrix, find dead/unreachable
-  states, and discover a shortest accepted string.
-- Export/import machine JSON. Download the graph as standalone SVG, the trace
-  as CSV, and batch results as CSV.
-
-## Semantics and limits
-
-Alphabet symbols are single characters. States use comma/whitespace-separated
-names. `ε`, `eps`, `epsilon`, `@`, and `<eps>` in transition symbols denote empty
-moves; these cannot be alphabet symbols. In input strings, **only a standalone
-`ε` or an empty field** denotes empty input. Other characters, including spaces,
-are literal. Blank lines in batch input are ignored; use `ε` to test emptiness.
-
-An NFA starts in the ε-closure of its start state and computes
-`ε-closure(move(current, symbol))` after each symbol. State sets represent
-possible states, not counts of distinct execution paths. A run accepts only
-when the entire input is consumed and at least one live state is accepting.
-Partial DFAs are supported: missing moves reject. Empty accepting sets are valid.
-
-Single inputs are limited to 2,000 characters; batch text to 20,000 characters;
-JSON uploads to 1 MB. Large or dense diagrams
-may need dragging, zooming, or a different layout to separate their labels.
 
 ## Project structure
 
-- `automata.py`: parsing, validation, simulation, analysis, JSON, conversion,
-  and NFA→DFA conversion. No Streamlit dependency.
-- `app.py`: Streamlit editor, tabs, downloads, and component data.
-- `player.js` / `player.css`: an inline Streamlit v2 component with local
-  animation and SVG interaction. No CDN scripts or frontend build step.
-- `test_automata.py` / `test_app.py`: engine and Streamlit regression tests.
+| File | Responsibility |
+|---|---|
+| `app.py` | **Entry point.** Streamlit layout, sidebar editor, question box, tabs, downloads |
+| `automata.py` | Engine: validation, ε-closure, simulation, verdicts, subset construction, analysis, JSON |
+| `computation_tree.py` | Builds the tree of all branches and classifies each leaf |
+| `regex_to_nfa.py` | Regex parser and Thompson's construction |
+| `question_solver.py` | Understands typed questions and builds DFAs/NFAs from them |
+| `gemini_generator.py` | Optional AI fallback (needs an API key) |
+| `player.js`, `player.css` | Animated state graph, tape and trace |
+| `tree.js`, `tree.css` | Animated computation tree |
+| `test_*.py` | Automated tests |
+| `.streamlit/config.toml` | Theme and server settings |
 
-## Verify
+The engine modules have no Streamlit dependency and can be imported on their own.
 
-```powershell
+## Semantics (how edge cases are handled)
+
+- **Empty string:** a blank input field or a standalone `ε` means the empty
+  string. In batch testing, blank lines are ignored; write `ε` to test it.
+- **ε-moves:** `ε`, `eps`, `epsilon`, `@` or `<eps>` in the Symbol column. These
+  cannot be alphabet symbols. An NFA starts in ε-closure(q₀) and applies the
+  closure after every symbol.
+- **Partial DFAs:** missing transitions are allowed and shown as a warning. The
+  run **dies** at a missing move and rejects; no trap state is added silently.
+- **Symbols outside Σ:** shown as a warning; the run rejects at the first such
+  symbol.
+- **Acceptance:** the whole input must be read and at least one live state must
+  be accepting.
+- **Invalid definitions** (unknown states, symbols not in Σ, DFA with two targets
+  or an ε-move, incomplete rows) are errors and block the run.
+
+## Testing
+
+```bash
 python -m unittest test_automata test_app test_gemini_generator test_question_solver test_computation_tree test_regex_to_nfa -v
 ```
 
-Tests cover all preset languages over short strings, ε-cycles, empty strings,
-missing/invalid transitions, JSON round trips, diagnostics, bounded conversion,
-randomized NFA equivalence after determinization, and UI workflows.
-The custom player's rendered interactions are also checked in the browser.
+Expected: `Ran 32 tests … OK`. The tests cover all presets, ε-cycles, the empty
+string, invalid and partial machines, JSON round trips, NFA→DFA equivalence on
+random ε-NFAs, the computation tree against the simulator, Thompson's
+construction against Python's `re`, the question solver against Python
+oracles, and the whole UI through Streamlit's AppTest. The Gemini tests mock the
+network, so no key is needed.
+
+## Known limitations and troubleshooting
+
+- Alphabet symbols are single characters.
+- Limits: 2,000 input symbols, 20,000 characters of batch text, 1 MB JSON,
+  400 computation-tree nodes, 64 states for generated machines.
+- DFA minimization is not included in this version.
+- The offline question solver understands common textbook phrasings; others need
+  the Gemini key, and AI-generated machines should be checked with test strings.
+- Dense diagrams: drag nodes, zoom, or switch to the circular layout.
+- *Port 8501 in use:* `python -m streamlit run app.py --server.port 8502`.
+- *ModuleNotFoundError:* re-run `python -m pip install -r requirements.txt` in the
+  same Python environment you run Streamlit from.
+
+## Team contributions and acknowledgements
+
+| Member | Contribution |
+|---|---|
+| [Name – ID] | [Contribution] |
+| [Name – ID] | [Contribution] |
+| [Name – ID] | [Contribution] |
+| [Name – ID] | [Contribution] |
+
+Theory follows Hopcroft, Motwani & Ullman, *Introduction to Automata Theory,
+Languages, and Computation* (3rd ed.) and Thompson (1968). Built with Streamlit
+(Apache-2.0) and pandas (BSD-3-Clause). No third-party source code is included.

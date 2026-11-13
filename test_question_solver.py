@@ -36,6 +36,12 @@ class LanguageTests(unittest.TestCase):
          lambda w: w.startswith("a") and "bb" in w),
         ("NFA for strings over {a,b} containing aba", "ab", lambda w: "aba" in w),
         ("NFA over {0,1} for strings ending with 11", "01", lambda w: w.endswith("11")),
+        ("Construct a DFA that accepts strings that do not contain consecutive 11", "01",
+         lambda w: "11" not in w),
+        ("no two consecutive 1s", "01", lambda w: "11" not in w),
+        ("binary strings without consecutive 0s", "01", lambda w: "00" not in w),
+        ("strings over {a,b} with no three consecutive a's", "ab", lambda w: "aaa" not in w),
+        ("strings over {a,b} containing two consecutive b's", "ab", lambda w: "bb" in w),
     ]
 
     def test_languages_match_oracle(self):
@@ -85,6 +91,9 @@ class QuestionTests(unittest.TestCase):
             solve("language of palindromes", self.current)
         with self.assertRaises(NotUnderstood):
             solve("   ")
+        # English words after "contain" must never become the pattern.
+        self.assertEqual(solve("strings that do not contain consecutive 11")["machine"]["alphabet"],
+                         ["0", "1"])
 
 
 if __name__ == "__main__":

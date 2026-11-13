@@ -88,8 +88,15 @@ class Condition:
         self.text, self.start, self.step, self.accept = text, start, step, accept
 
     def negate(self) -> "Condition":
-        return Condition(f"NOT ({self.text})", self.start, self.step,
-                         lambda k, f=self.accept: not f(k))
+        text = self.text
+        for pos, neg in (("contains ", "does not contain "), ("ends with ", "does not end with "),
+                         ("starts with ", "does not start with ")):
+            if text.startswith(pos):
+                text = neg + text[len(pos):]
+                break
+        else:
+            text = f"NOT ({text})"
+        return Condition(text, self.start, self.step, lambda k, f=self.accept: not f(k))
 
 
 def ends_with(w):
@@ -192,12 +199,53 @@ CMP_WORDS = {"exactly": "==", "at least": ">=", "atleast": ">=", "minimum": ">="
 CMP = r"(?P<cmp>exactly|at least|atleast|at most|atmost|minimum of|minimum|maximum of|maximum|no more than|no less than)"
 
 
+COUNT_WORDS = {"two": 2, "three": 3, "four": 4, "2": 2, "3": 3, "4": 4}
+CONSEC = (r"(?P<neg>\b(?:not|don't|doesn't|do not|does not|never|without|no)\s+)?"
+          r"\b(?:(?:contain|contains|containing|having|has|have|include|includes|with)\s+)?"
+          r"(?P<no>no\s+)?(?:(?P<cnt>two|three|four|2|3|4)\s+)?consecutive\s+"
+          r"""['"‘’“”]?(?P<w>[A-Za-z0-9]+?)['"‘’“”]?(?:'s|’s|s)?(?![A-Za-z0-9])""")
+
+
+def _consecutive(m):
+    """'consecutive 11', 'two consecutive 1s', 'no 3 consecutive a's' -> repeated block."""
+    w = m["w"]
+    if len(w) > 1 and len(set(w)) == 1:
+        block = w
+    else:
+        block = w[0] * COUNT_WORDS.get((m["cnt"] or "two").lower(), 2)
+    cond = contains(block)
+    if m["no"]:
+        cond = cond.negate()
+    return cond, "contains" if not m["no"] else None, block[0]
+
+
+# Words that can follow "contains", "ends with" … in a sentence but are never patterns.
+STOP_WORDS = {"the", "and", "any", "all", "only", "both", "more", "less", "one", "two",
+              "three", "consecutive", "substring", "pattern", "string", "strings", "even",
+              "odd", "exactly", "least", "most", "letter", "letters", "symbol", "symbols",
+              "an", "same", "different", "either", "each", "every", "some", "no", "at"}
+
+
+def _valid_token(m, alphabet):
+    """Reject English words captured as a pattern (e.g. 'contain consecutive')."""
+    w = m.groupdict().get("w")
+    if not w:
+        return True
+    quoted = m.group(0).rstrip()[-1:] in "'\"’”" and not m.group(0).rstrip().endswith("'s")
+    if alphabet:
+        return set(w) <= set(alphabet)
+    if quoted or w.isdigit():
+        return True
+    return w.isalpha() and len(set(w.lower())) <= 3 and w.lower() not in STOP_WORDS
+
+
 def _num(text):
     return int(text) if text.isdigit() else NUMBER_WORDS[text.lower()]
 
 
 # Each rule: (regex, builder(match) -> (Condition, nfa_kind|None, needs_alphabet_chars))
 RULES = [
+    (CONSEC, _consecutive),
     (NEG + r"\bwithout\s+(?:the\s+|a\s+)?(?:sub-?string\s+)?" + TOKEN,
      lambda m: (contains(m["w"]).negate(), None, m["w"])),
     (NEG + r"\b(?:end|ends|ending|ended)\s+(?:with|in)\s+(?:the\s+)?(?:sub-?string\s+)?" + TOKEN,
@@ -243,12 +291,14 @@ def parse_alphabet(text: str) -> Optional[List[str]]:
     return None
 
 
-def parse_conditions(text: str):
+def parse_conditions(text: str, alphabet: Optional[List[str]] = None):
     found = []
     taken = []
     for pattern, build in RULES:
         for m in re.finditer(pattern, text, re.I):
             if any(m.start() < e and s < m.end() for s, e in taken):
+                continue
+            if not _valid_token(m, alphabet):
                 continue
             cond, nfa_kind, chars = build(m)
             if m.groupdict().get("neg"):
@@ -384,7 +434,7 @@ def solve(question: str, current: Optional[dict] = None) -> dict:
         raise NotUnderstood("Type a question first.")
     lower = q.lower()
     alphabet = parse_alphabet(q)
-    found = parse_conditions(q)
+    found = parse_conditions(q, alphabet)
     spans = [f[4] for f in found] + [m.span() for m in re.finditer(r"\{[^{}]*\}", q)]
 
     if found:
