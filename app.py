@@ -7,6 +7,7 @@ import os
 import pandas as pd
 import streamlit as st
 from gemini_generator import DEFAULT_MODEL, generate
+from computation_tree import accepting_path, build_tree, describe_path
 from question_solver import EXAMPLE_QUESTIONS, NotUnderstood, solve, solve_from_spec
 
 from automata import (
@@ -25,6 +26,12 @@ _VISUALIZER = st.components.v2.component(
     html='<div class="automata-player"></div>\n',
     css=(_ROOT / "player.css").read_text(encoding="utf-8"),
     js=(_ROOT / "player.js").read_text(encoding="utf-8"),
+)
+_TREE = st.components.v2.component(
+    "computation_tree",
+    html='<div class="computation-tree"></div>\n',
+    css=(_ROOT / "tree.css").read_text(encoding="utf-8"),
+    js=(_ROOT / "tree.js").read_text(encoding="utf-8"),
 )
 
 if "spec" not in st.session_state:
@@ -191,8 +198,8 @@ with st.container(horizontal=True):
 for warning in warnings:
     st.warning(warning)
 
-simulate_tab, test_tab, learn_tab = st.tabs(
-    ["Simulate", "Test strings", "Machine insights"])
+simulate_tab, tree_tab, test_tab, learn_tab = st.tabs(
+    ["Simulate", "Computation tree", "Test strings", "Machine insights"])
 
 with simulate_tab:
     text = normalize_input(st.text_input("Input string", spec.get("sample", ""),
@@ -224,6 +231,31 @@ with simulate_tab:
                            "application/json", icon=":material/download:")
         st.download_button("Download trace", trace.to_csv(index=False).encode("utf-8"),
                            "trace.csv", "text/csv", icon=":material/table_chart:")
+
+with tree_tab:
+    st.caption("Every path the machine can take on the input string, one branch per choice. "
+               "Unlike the Simulate tab, branches are never merged, so you can see exactly "
+               "which paths die, which end in a non-final state, and which accept.")
+    tree = build_tree(machine, text)
+    tree_payload = {"nodes": tree["nodes"], "text": tree["text"], "accepts": machine["accepts"],
+                    "summary": tree["summary"], "accepted": tree["accepted"]}
+    tree_id = hashlib.sha256(json.dumps(tree_payload, sort_keys=True).encode()).hexdigest()[:16]
+    tree_payload["uid"] = tree_id
+    _TREE(data=tree_payload, key=f"tree_{tree_id}", height="content")
+    if tree["truncated"]:
+        st.warning("The tree was cut off at 400 nodes. Try a shorter input string to see every branch.")
+    a, b, c, d = st.columns(4)
+    a.metric("Branches explored", tree["summary"]["branches"])
+    b.metric("Accepting", tree["summary"]["accepting"])
+    c.metric("Died (no move)", tree["summary"]["dead"])
+    d.metric("Ended non-final", tree["summary"]["rejecting"])
+    path = accepting_path(tree)
+    if path:
+        st.markdown("**An accepting computation path:**")
+        st.code(describe_path(path), language=None)
+    if kind == "DFA":
+        st.info("A DFA has exactly one choice at every step, so its tree is a single path. "
+                "Switch to an NFA example to see branching.", icon=":material/info:")
 
 with test_tab:
     st.subheader("Try a whole language sample")

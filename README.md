@@ -14,6 +14,18 @@ python -m streamlit run app.py
 
 Open [localhost:8501](http://localhost:8501).
 
+## Computation tree
+
+The **Computation tree** tab animates every path the machine can take on the
+input string, symbol by symbol. Branches are never merged (unlike the state-set
+view in Simulate), so each nondeterministic choice and ε-move becomes its own
+branch. Live branches glow indigo, branches with no move are marked
+**✗ stuck**, branches that finish in a non-final state are marked
+**✗ not final**, and accepting branches are marked **✓ accept**, with the
+accepting path highlighted in green. The verdict explains how many branches
+accepted, died, or ended non-final, and one accepting path is printed in
+`q0 --a--> q1` form. Trees are capped at 400 nodes.
+
 ## Ask a question
 
 Type a question at the top of the page and click **Solve**. The built-in solver
@@ -110,7 +122,7 @@ may need dragging, zooming, or a different layout to separate their labels.
 ## Verify
 
 ```powershell
-python -m unittest test_automata test_app test_gemini_generator test_question_solver -v
+python -m unittest test_automata test_app test_gemini_generator test_question_solver test_computation_tree -v
 ```
 
 Tests cover all preset languages over short strings, ε-cycles, empty strings,
