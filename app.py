@@ -2,9 +2,12 @@
 from pathlib import Path
 import hashlib
 import json
+import os
 
 import pandas as pd
 import streamlit as st
+from gemini_generator import DEFAULT_MODEL, generate
+from question_solver import EXAMPLE_QUESTIONS, NotUnderstood, solve, solve_from_spec
 
 from automata import (
     EPS, PRESETS, DEFAULT_PRESET, analyze_machine, build_machine,
@@ -36,6 +39,72 @@ def load_spec(spec):
 
 def load_preset():
     load_spec(PRESETS[st.session_state.preset])
+
+
+def gemini_key():
+    key = os.environ.get("GEMINI_API_KEY", "")
+    if not key:
+        try:
+            key = st.secrets.get("GEMINI_API_KEY", "")
+        except st.errors.StreamlitSecretNotFoundError:
+            pass
+    return key
+
+
+def use_example(text):
+    st.session_state.question = text
+
+
+def ask_question(question, current):
+    """Solve offline first; fall back to Gemini for unfamiliar languages."""
+    st.session_state.pop("qa_result", None)
+    st.session_state.pop("qa_error", None)
+    try:
+        result = solve(question, current)
+    except NotUnderstood as offline_error:
+        api_key = gemini_key()
+        if not api_key:
+            st.session_state.qa_error = (
+                f"{offline_error} The built-in solver handles patterns like *ends with*, "
+                "*starts with*, *contains*, *even/odd number of*, *length*, *divisible by*, "
+                "and *not/and/or* combinations. Add GEMINI_API_KEY to handle any other language.")
+            return
+        try:
+            with st.spinner("Not a standard pattern — asking Gemini…"):
+                spec = generate(question, api_key, os.environ.get("GEMINI_MODEL", DEFAULT_MODEL))
+            result = solve_from_spec(spec, question)
+        except ValueError as exc:
+            st.session_state.qa_error = str(exc)
+            return
+    result["question"] = question
+    st.session_state.qa_result = result
+    if result["spec"] is not None:
+        load_spec(result["spec"])
+
+
+def show_answer(result):
+    with st.container(border=True):
+        st.markdown(f"#### {result['title']}")
+        st.caption(f"Question: {result['question']}")
+        for line in result["steps"]:
+            st.markdown(line)
+        if result["tests"]:
+            st.markdown("**Results for your strings**")
+            st.dataframe(pd.DataFrame(result["tests"]), hide_index=True, width="stretch")
+        left, right = st.columns([3, 2])
+        with left:
+            st.markdown("**Transition table** (→ start, * final)")
+            st.dataframe(result["table"], hide_index=True, width="stretch")
+        with right:
+            st.markdown("**Accepted examples:** " + ", ".join(result["accepted_examples"] or ["none"]))
+            st.markdown("**Rejected examples:** " + ", ".join(result["rejected_examples"] or ["none"]))
+            if result["spec"] is not None:
+                st.success("Loaded into the simulator below — press play to watch it run.",
+                           icon=":material/play_circle:")
+        if result.get("extra"):
+            label, frame = result["extra"]
+            st.markdown(f"**{label}**")
+            st.dataframe(frame, hide_index=True, width="stretch")
 
 
 with st.sidebar:
@@ -79,6 +148,34 @@ st.title("Watch a machine think.")
 st.caption("Build a DFA or ε-NFA. Follow every symbol, explore the live state set, and see why a string accepts.")
 
 machine, errors, warnings = build_machine(kind, states_txt, alpha_txt, start_txt, accepts_txt, edited)
+
+st.subheader("Ask a question", anchor=False)
+st.caption("Type a question like you would in an exam — the app builds the machine, "
+           "tests your strings, and shows the answer.")
+question = st.text_area(
+    "Your question", key="question", max_chars=4000, height=90,
+    placeholder="Construct a DFA over {0,1} for strings ending with 01 and check 1101, 0110",
+    label_visibility="collapsed")
+with st.container(horizontal=True):
+    if st.button("Solve", type="primary", icon=":material/auto_awesome:",
+                 disabled=not question.strip()):
+        ask_question(question, None if errors else machine)
+        st.rerun()
+    if "qa_result" in st.session_state or "qa_error" in st.session_state:
+        if st.button("Clear answer", icon=":material/close:"):
+            st.session_state.pop("qa_result", None)
+            st.session_state.pop("qa_error", None)
+            st.rerun()
+with st.expander("Example questions"):
+    for i, example in enumerate(EXAMPLE_QUESTIONS):
+        st.button(example, key=f"example_{i}", on_click=use_example, args=(example,),
+                  type="tertiary")
+if "qa_error" in st.session_state:
+    st.warning(st.session_state.qa_error)
+if "qa_result" in st.session_state:
+    show_answer(st.session_state.qa_result)
+st.divider()
+
 if errors:
     st.error("Fix the machine definition to start exploring.")
     for message in errors:

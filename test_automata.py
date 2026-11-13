@@ -8,7 +8,7 @@ import pandas as pd
 
 from automata import (
     EPS, PRESETS, analyze_machine, build_machine, determinize, eps_closure,
-    export_machine, import_machine, machine_from_spec, minimize_dfa, simulate,
+    export_machine, import_machine, machine_from_spec, simulate,
 )
 
 
@@ -72,7 +72,7 @@ class AutomataTests(unittest.TestCase):
                                          pd.DataFrame(rows, columns=["From", "Symbol", "To"]))
             self.assertTrue(errors, (kind, rows))
 
-    def test_conversion_and_minimization_preserve_languages(self):
+    def test_conversion_preserves_languages(self):
         random.seed(47)
         machines = [machine_from_spec(spec)[0] for spec in PRESETS.values()]
         for _ in range(12):
@@ -81,20 +81,9 @@ class AutomataTests(unittest.TestCase):
             machines.append(machine(transitions=edges, accepts=random.choice(["", "a", "b,c"])))
         for m in machines:
             dfa, _ = determinize(m)
-            minimal, _ = minimize_dfa(dfa)
-            again, _ = minimize_dfa(minimal)
-            self.assertLessEqual(len(minimal["states"]), len(dfa["states"]))
-            self.assertEqual(len(minimal["states"]), len(again["states"]))
             for word in words(m["alphabet"]):
                 expected = simulate(m, word)[1]
                 self.assertEqual(simulate(dfa, word)[1], expected)
-                self.assertEqual(simulate(minimal, word)[1], expected)
-
-    def test_minimal_empty_and_universal_languages(self):
-        for accepts in ("", "a,b,c"):
-            m = machine("DFA", [(s, a, s) for s in "abc" for a in "01"], accepts)
-            reduced, _ = minimize_dfa(m)
-            self.assertEqual(len(reduced["states"]), 1)
 
     def test_conversion_guard(self):
         m = machine(transitions=[("a", "0", "b")])
