@@ -14,6 +14,14 @@ python -m streamlit run app.py
 
 Open [localhost:8501](http://localhost:8501).
 
+## Regular expression → ε-NFA
+
+In the sidebar, open **Build from a regular expression**, type an expression
+such as `(a|b)*ab` and click **Build ε-NFA**. Thompson's construction turns each
+symbol, union (`|` or `+`), concatenation, star (`*`) and optional (`?`) into a
+small piece joined by ε-moves; `ε` is the empty string. The machine loads into
+the editor, the simulator and the computation tree like any other.
+
 ## Computation tree
 
 The **Computation tree** tab animates every path the machine can take on the
@@ -122,7 +130,7 @@ may need dragging, zooming, or a different layout to separate their labels.
 ## Verify
 
 ```powershell
-python -m unittest test_automata test_app test_gemini_generator test_question_solver test_computation_tree -v
+python -m unittest test_automata test_app test_gemini_generator test_question_solver test_computation_tree test_regex_to_nfa -v
 ```
 
 Tests cover all preset languages over short strings, ε-cycles, empty strings,

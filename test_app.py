@@ -45,5 +45,14 @@ class AppTests(unittest.TestCase):
         self.assertTrue(app.session_state["qa_result"]["tests"][0]["Result"].endswith("Accepted"))
 
 
+    def test_regex_builds_nfa(self):
+        app = AppTest.from_file("app.py", default_timeout=15).run()
+        app.text_input(key="regex").set_value("(a|b)*ab").run()
+        next(b for b in app.button if b.label == "Build ε-NFA").click().run()
+        self.assertFalse(app.exception)
+        self.assertFalse(app.error)
+        version = app.session_state["version"]
+        self.assertEqual(app.text_input(key=f"alpha_{version}").value, "a, b")
+
 if __name__ == "__main__":
     unittest.main()

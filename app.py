@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 from gemini_generator import DEFAULT_MODEL, generate
 from computation_tree import accepting_path, build_tree, describe_path
+from regex_to_nfa import RegexError, regex_spec
 from question_solver import EXAMPLE_QUESTIONS, NotUnderstood, solve, solve_from_spec
 
 from automata import (
@@ -119,6 +120,18 @@ with st.sidebar:
     st.caption("A playground for finite state machines")
     st.selectbox("Example machine", list(PRESETS), key="preset", on_change=load_preset)
     st.button("Reload example", icon=":material/restart_alt:", on_click=load_preset, width="stretch")
+    with st.expander("Build from a regular expression", icon=":material/function:"):
+        regex = st.text_input("Regular expression", placeholder="(a|b)*ab", key="regex",
+                              help="Union: | or +   Star: *   Optional: ?   Empty string: ε   Grouping: ( )")
+        if st.button("Build ε-NFA", disabled=not regex.strip(), width="stretch"):
+            try:
+                load_spec(regex_spec(regex))
+            except RegexError as exc:
+                st.error(str(exc))
+            else:
+                st.rerun()
+        st.caption("Thompson's construction: each symbol, union, concatenation and star "
+                   "becomes a small piece joined to the others by ε-moves.")
     spec = st.session_state.spec
     version = st.session_state.version
     st.caption(spec["blurb"])
