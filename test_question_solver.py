@@ -157,6 +157,11 @@ class EdgeCaseTests(unittest.TestCase):
         ("accepts only the empty string", "ab", lambda w: w == ""),
         ("strings over a and b that end with ab", "ab", lambda w: w.endswith("ab")),
         ("strings that start with a and start with b", "ab", lambda w: False),
+        ("Construct an NFA that accepts strings containing 00 or 11 as substrings.", "01",
+         lambda w: "00" in w or "11" in w),
+        ("NFA for strings that start with 01 or end with 10", "01",
+         lambda w: w.startswith("01") or w.endswith("10")),
+        ("NFA for strings containing 01, 10 or 11", "01", lambda w: "01" in w or "10" in w or "11" in w),
     ]
 
     def test_cases_match_oracle(self):
@@ -168,6 +173,10 @@ class EdgeCaseTests(unittest.TestCase):
                     for chars in product(alphabet, repeat=n):
                         w = "".join(chars)
                         self.assertEqual(simulate(machine, w)[1], oracle(w), w)
+
+    def test_union_nfa_is_the_textbook_one(self):
+        machine = solve("Construct an NFA that accepts strings containing 00 or 11 as substrings.")["machine"]
+        self.assertEqual((machine["kind"], len(machine["states"])), ("NFA", 4))
 
     def test_non_regular_languages_are_explained(self):
         for question in ["DFA for palindromes over {a,b}", "a^n b^n", "0^n1^n where n>=1",

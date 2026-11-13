@@ -141,10 +141,10 @@ The engine modules have no Streamlit dependency and can be imported on their own
 python -m unittest test_automata test_app test_gemini_generator test_question_solver test_computation_tree test_regex_to_nfa -v
 ```
 
-Expected: `Ran 36 tests … OK`. The tests cover all presets, ε-cycles, the empty
+Expected: `Ran 37 tests … OK`. The tests cover all presets, ε-cycles, the empty
 string, invalid and partial machines, JSON round trips, NFA→DFA equivalence on
 random ε-NFAs, the computation tree against the simulator, Thompson's
-construction against Python's `re`, the question solver (55 phrasings, non-regular requests and error cases)
+construction against Python's `re`, the question solver (58 phrasings, non-regular requests and error cases)
 against Python oracles, and the whole UI through Streamlit's AppTest. The Gemini tests mock the
 network, so no key is needed.
 

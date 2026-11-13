@@ -343,6 +343,60 @@ def classic_nfa(kind: str, w: str, alphabet: List[str]) -> dict:
             "accepts": [f"q{n}"], "trans": trans}
 
 
+def union_nfa(kinds: List[str], words: List[str], alphabet: List[str]):
+    """Textbook NFA for 'contains/ends with/starts with w1 or w2 or ...'."""
+    trans: Dict[Tuple[str, str], List[str]] = {}
+
+    def add(u, a, v):
+        bucket = trans.setdefault((u, a), [])
+        if v not in bucket:
+            bucket.append(v)
+
+    if len(set(kinds)) == 1 and kinds[0] in ("contains", "ends"):
+        # One looping start state, one chain per pattern, one shared final state.
+        states, final = ["q0"], None
+        for a in alphabet:
+            add("q0", a, "q0")
+        chains = []
+        for w in words:
+            chain = ["q0"] + [None] * (len(w) - 1)
+            for i in range(1, len(w)):
+                chain[i] = f"q{len(states)}"
+                states.append(chain[i])
+            chains.append(chain)
+        final = f"q{len(states)}"
+        states.append(final)
+        for w, chain in zip(words, chains):
+            nodes = chain + [final]
+            for i, ch in enumerate(w):
+                add(nodes[i], ch, nodes[i + 1])
+        if kinds[0] == "contains":
+            for a in alphabet:
+                add(final, a, final)
+        idea = ("q0 loops on every symbol and guesses where a pattern begins; each pattern has its "
+                "own chain of states and all chains meet in one accepting state"
+                + (" that loops on every symbol (the rest of the string can be anything)."
+                   if kinds[0] == "contains" else " (it must be the end of the input)."))
+        return {"kind": "NFA", "states": states, "alphabet": alphabet[:], "start": "q0",
+                "accepts": [final], "trans": trans}, idea
+    # Mixed kinds: a new start state with ε-moves into one classic NFA per condition.
+    states, accepts = ["q0"], []
+    for kind, w in zip(kinds, words):
+        part = classic_nfa(kind, w, alphabet)
+        offset = len(states)
+        rename = {s: f"q{offset + i}" for i, s in enumerate(part["states"])}
+        states += list(rename.values())
+        add("q0", EPS, rename[part["start"]])
+        for (u, a), targets in part["trans"].items():
+            for v in targets:
+                add(rename[u], a, rename[v])
+        accepts += [rename[x] for x in part["accepts"]]
+    idea = ("a new start state q0 jumps by ε-moves into one small NFA per condition; the string is "
+            "accepted if any of them accepts (union construction).")
+    return {"kind": "NFA", "states": states, "alphabet": alphabet[:], "start": "q0",
+            "accepts": accepts, "trans": trans}, idea
+
+
 # --------------------------------------------------------------------------- #
 # Parsing
 # --------------------------------------------------------------------------- #
@@ -632,6 +686,36 @@ def check_regular(text: str):
 # Text normalisation and regular expressions inside questions
 # --------------------------------------------------------------------------- #
 
+PATTERN_KW = (r"contains?|containing|includes?|including|having|has|have|ends?\s+with|ending\s+with|ends?\s+in|"
+              r"starts?\s+with|starting\s+with|begins?\s+with|beginning\s+with")
+NOT_PATTERNS = STOP_WORDS | {"ends", "end", "starts", "start", "begins", "has", "have", "is", "are",
+                             "contains", "contain", "length", "number", "every", "even", "odd",
+                             "as", "substring", "substrings", "check", "test", "its", "it"}
+
+
+def _looks_like_pattern(tok: str) -> bool:
+    tok = tok.strip("'\"‘’“”")
+    if not tok or tok.lower() in NOT_PATTERNS:
+        return False
+    return tok.isdigit() or (tok.isalnum() and len(set(tok.lower())) <= 3)
+
+
+def _expand_pattern_lists(q: str) -> str:
+    """'contains 00 or 11' -> 'contains 00 or contains 11' (also and, commas, ends/starts with)."""
+    rx = re.compile(r"\b(" + PATTERN_KW + r")\s+(?:the\s+)?(?:sub-?strings?\s+|patterns?\s+)?"
+                    r"((?:['\"‘’“”]?[A-Za-z0-9]+['\"‘’“”]?\s*,\s*)*['\"‘’“”]?[A-Za-z0-9]+['\"‘’“”]?)"
+                    r"\s*,?\s+(or|and)\s+(['\"‘’“”]?[A-Za-z0-9]+['\"‘’“”]?)(?![A-Za-z0-9'’])", re.I)
+
+    def expand(m):
+        first = [t.strip() for t in m.group(2).split(",")]
+        last = m.group(4)
+        if not all(_looks_like_pattern(t) for t in first + [last]):
+            return m.group(0)
+        kw, conj = m.group(1), m.group(3)
+        return f" {conj} ".join(f"{kw} {t}" for t in first + [last])
+    return rx.sub(expand, q)
+
+
 def normalize(q: str) -> str:
     """Rewrite common notations into the phrasings the rules understand."""
     q = re.sub(r"\b[nN]\s*_?\s*\{?\s*([A-Za-z0-9])\s*\}?\s*\(\s*w\s*\)", r"number of \1's", q)
@@ -644,6 +728,7 @@ def normalize(q: str) -> str:
                r"(?:both\s+)(\S+)\s+and\s+(\S+)", r"\1 \2 and \1 \3", q, flags=re.I)
     q = re.sub(r"\b(contains?|containing|having|has|have|ends?\s+with|ending\s+with|starts?\s+with|starting\s+with|begins?\s+with|beginning\s+with)\s+"
                r"(?:either\s+)(\S+)\s+or\s+(\S+)", r"\1 \2 or \1 \3", q, flags=re.I)
+    q = _expand_pattern_lists(q)
     q = re.sub(r"\b(?:number|no\.?|count)\s+of\s+(['\"]?[A-Za-z0-9]['\"]?(?:'s|s)?)\s+and\s+(['\"]?[A-Za-z0-9]['\"]?(?:'s|s)?)\s+(?:are\s+|is\s+)?both\s+(even|odd)",
                r"\3 number of \1 and \3 number of \2", q, flags=re.I)
     return q
@@ -926,6 +1011,16 @@ def solve(question: str, current: Optional[dict] = None) -> dict:
         cond = combine_mixed([f[1] for f in found], connectors)
         tests = parse_test_strings(q, alphabet, spans)
         language = f"L = {{ w ∈ {{{', '.join(alphabet)}}}* | {cond.text} }}"
+
+        kinds = [f[2] for f in found]
+        if (wants_nfa and len(found) > 1 and all(k in ("contains", "ends", "starts") for k in kinds)
+                and all(c == "or" for c in connectors)):
+            words = [re.sub(r"[^A-Za-z0-9]", "", f[3]) for f in found]
+            machine, idea = union_nfa(kinds, words, alphabet)
+            steps_md = [f"**Language:** {language}", f"**Idea:** {idea}",
+                        f"**NFA:** {len(machine['states'])} states, start {machine['start']}, "
+                        f"final {fmt_set(machine['accepts'])}."]
+            return _finish(machine, f"NFA: {cond.text}", steps_md, tests)
 
         if wants_nfa and len(found) == 1 and found[0][2]:
             machine = classic_nfa(found[0][2], re.sub(r"[^A-Za-z0-9]", "", found[0][3]), alphabet)
