@@ -141,10 +141,10 @@ The engine modules have no Streamlit dependency and can be imported on their own
 python -m unittest test_automata test_app test_gemini_generator test_question_solver test_computation_tree test_regex_to_nfa -v
 ```
 
-Expected: `Ran 37 tests … OK`. The tests cover all presets, ε-cycles, the empty
+Expected: `Ran 39 tests … OK`. The tests cover all presets, ε-cycles, the empty
 string, invalid and partial machines, JSON round trips, NFA→DFA equivalence on
 random ε-NFAs, the computation tree against the simulator, Thompson's
-construction against Python's `re`, the question solver (58 phrasings, non-regular requests and error cases)
+construction against Python's `re`, the question solver (65 phrasings, non-regular requests and error cases)
 against Python oracles, and the whole UI through Streamlit's AppTest. The Gemini tests mock the
 network, so no key is needed.
 
@@ -152,8 +152,10 @@ network, so no key is needed.
 
 - Alphabet symbols are single characters.
 - Limits: 2,000 input symbols, 20,000 characters of batch text, 1 MB JSON,
-  400 computation-tree nodes, 64 states for generated machines.
-- DFA minimization is not included in this version.
+  400 computation-tree nodes by default (adjustable up to 4,000), 64 states for generated
+  machines.
+- There is no separate tool to minimize a DFA you draw yourself. DFAs built by the question
+  box are always reduced to the fewest possible states.
 - The offline question solver understands common textbook phrasings; others need
   the Gemini key, and AI-generated machines should be checked with test strings.
 - Dense diagrams: drag nodes, zoom, or switch to the circular layout.

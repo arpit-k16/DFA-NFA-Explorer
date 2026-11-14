@@ -256,14 +256,18 @@ with tree_tab:
     st.caption("Every path the machine can take on the input string, one branch per choice. "
                "Unlike the Simulate tab, branches are never merged, so you can see exactly "
                "which paths die, which end in a non-final state, and which accept.")
-    tree = build_tree(machine, text)
+    tree = build_tree(machine, text, max_nodes=st.session_state.get("tree_limit", 400))
     tree_payload = {"nodes": tree["nodes"], "text": tree["text"], "accepts": machine["accepts"],
                     "summary": tree["summary"], "accepted": tree["accepted"]}
     tree_id = hashlib.sha256(json.dumps(tree_payload, sort_keys=True).encode()).hexdigest()[:16]
     tree_payload["uid"] = tree_id
     _TREE(data=tree_payload, key=f"tree_{tree_id}", height="content")
-    if tree["truncated"]:
-        st.warning("The tree was cut off at 400 nodes. Try a shorter input string to see every branch.")
+    if tree["truncated"] or st.session_state.get("tree_limit", 400) != 400:
+        if tree["truncated"]:
+            st.warning(f"The tree was cut off at {st.session_state.get('tree_limit', 400)} nodes. "
+                       "Raise the limit below, or try a shorter input string, to see every branch.")
+        st.select_slider("Tree size limit (nodes)", options=[400, 1000, 2000, 4000], key="tree_limit",
+                         help="Larger trees show every branch of long inputs but draw more slowly.")
     a, b, c, d = st.columns(4)
     a.metric("Branches explored", tree["summary"]["branches"])
     b.metric("Accepting", tree["summary"]["accepting"])

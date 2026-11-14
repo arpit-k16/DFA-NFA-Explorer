@@ -162,6 +162,15 @@ class EdgeCaseTests(unittest.TestCase):
         ("NFA for strings that start with 01 or end with 10", "01",
          lambda w: w.startswith("01") or w.endswith("10")),
         ("NFA for strings containing 01, 10 or 11", "01", lambda w: "01" in w or "10" in w or "11" in w),
+        ("NFA for strings containing 00 and 11", "01", lambda w: "00" in w and "11" in w),
+        ("NFA for strings that start with a and end with b or contain aa", "ab",
+         lambda w: (w.startswith("a") and w.endswith("b")) or "aa" in w),
+        ("NFA for strings whose third symbol from the end is 1 and that end with 0", "01",
+         lambda w: len(w) >= 3 and w[-3] == "1" and w.endswith("0")),
+        ("a^n b^n with n <= 3", "ab", lambda w: w in ("", "ab", "aabb", "aaabbb")),
+        ("0^n1^n where 1 <= n < 4", "01", lambda w: w in ("01", "0011", "000111")),
+        ("DFA for L = {ab, ba, aab}", "ab", lambda w: w in ("ab", "ba", "aab")),
+        ("binary numbers divisible by 100", "01", lambda w: int(w or "0", 2) % 100 == 0),
     ]
 
     def test_cases_match_oracle(self):
@@ -173,6 +182,40 @@ class EdgeCaseTests(unittest.TestCase):
                     for chars in product(alphabet, repeat=n):
                         w = "".join(chars)
                         self.assertEqual(simulate(machine, w)[1], oracle(w), w)
+
+    def test_dfa_answers_have_the_fewest_states(self):
+        # No two states of a generated DFA may be equivalent (table-filling check).
+        expected = {"strings over {a,b} that start with a and contain bb": 5,
+                    "strings over {a,b,c} that start and end with the same letter": 7,
+                    "third symbol from the end is 1": 8,
+                    "DFA for strings containing 00 or 11": 4,
+                    "DFA for (a+b)*abb": 4,
+                    "even number of a's and odd number of b's": 4}
+        for question, size in expected.items():
+            with self.subTest(question):
+                m = solve(question)["machine"]
+                self.assertEqual(len(m["states"]), size)
+                marked = {(p, q) for p in m["states"] for q in m["states"]
+                          if (p in m["accepts"]) != (q in m["accepts"])}
+                changed = True
+                while changed:
+                    changed = False
+                    for p in m["states"]:
+                        for q in m["states"]:
+                            if (p, q) not in marked and any(
+                                    (m["trans"][p, a][0], m["trans"][q, a][0]) in marked
+                                    for a in m["alphabet"]):
+                                marked.add((p, q))
+                                changed = True
+                for p in m["states"]:
+                    for q in m["states"]:
+                        if p != q:
+                            self.assertIn((p, q), marked, f"{p} and {q} are equivalent")
+
+    def test_nfa_requested_for_and_gives_an_nfa(self):
+        self.assertEqual(solve("NFA for strings containing 00 and 11")["machine"]["kind"], "NFA")
+        current = machine_from_spec(PRESETS['Contains "ab"'])[0]
+        self.assertEqual(solve("Is a accepted?", current)["tests"][0]["String"], "a")
 
     def test_union_nfa_is_the_textbook_one(self):
         machine = solve("Construct an NFA that accepts strings containing 00 or 11 as substrings.")["machine"]
@@ -188,7 +231,7 @@ class EdgeCaseTests(unittest.TestCase):
     def test_definite_answers_without_machine(self):
         for question, message in [("minimize this DFA", "minimization"),
                                   ("binary numbers divisible by 0", "at least 1"),
-                                  ("binary numbers divisible by 100", "64 states"),
+                                  ("binary numbers divisible by 1000", "more than the 64"),
                                   ("11th symbol from the end is 0", "NFA")]:
             with self.subTest(question), self.assertRaisesRegex(FinalAnswer, message):
                 solve(question)

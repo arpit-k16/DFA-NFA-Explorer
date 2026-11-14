@@ -34,7 +34,8 @@ from automata import (
 )
 from regex_to_nfa import RegexError, regex_to_nfa
 
-MAX_STATES = 64
+MAX_STATES = 64        # largest machine that is still readable when drawn
+EXPLORE_LIMIT = 4096   # states explored before equivalent states are merged
 
 NUMBER_WORDS = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
                 "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
@@ -82,7 +83,7 @@ def _explore(alphabet: List[str], start, step: Callable, accept: Callable) -> di
         for symbol in alphabet:
             nxt = step(key, symbol)
             if nxt not in names:
-                if len(names) >= MAX_STATES:
+                if len(names) >= EXPLORE_LIMIT:
                     raise FinalAnswer(f"That language needs more than {MAX_STATES} states, which is "
                                       "too large to draw clearly. Try a smaller number.")
                 names[nxt] = f"q{len(names)}"
@@ -850,6 +851,139 @@ def to_spec(machine: dict, blurb: str, sample: str, batch: List[str]) -> dict:
     }
 
 
+def _reduce(dfa: dict) -> dict:
+    """Merge states that behave identically, so the answer has the fewest possible states.
+
+    Works on the complete DFAs this module builds: drop unreachable states, then split
+    {accepting, non-accepting} until states in a block agree on every symbol.
+    """
+    alphabet, trans = dfa["alphabet"], dfa["trans"]
+    order, seen = [dfa["start"]], {dfa["start"]}
+    for s in order:                       # breadth-first: reachable states in a stable order
+        for a in alphabet:
+            t = trans[s, a][0]
+            if t not in seen:
+                seen.add(t)
+                order.append(t)
+    finals = set(dfa["accepts"])
+    block = {s: int(s in finals) for s in order}
+    count = len(set(block.values()))
+    while True:
+        ids, new = {}, {}
+        for s in order:
+            sig = (block[s],) + tuple(block[trans[s, a][0]] for a in alphabet)
+            new[s] = ids.setdefault(sig, len(ids))
+        block = new
+        if len(ids) == count:
+            break
+        count = len(ids)
+    names = {}
+    for s in order:                       # number blocks in the order they are first reached
+        names.setdefault(block[s], f"q{len(names)}")
+    rep_of = {}
+    for s in order:
+        rep_of.setdefault(block[s], s)
+    return {"kind": "DFA", "states": list(names.values()), "alphabet": alphabet[:],
+            "start": names[block[dfa["start"]]],
+            "accepts": [names[b] for b, s in rep_of.items() if s in finals],
+            "trans": {(names[b], a): [names[block[trans[s, a][0]]]]
+                      for b, s in rep_of.items() for a in alphabet}}
+
+
+def _fits(machine: dict) -> dict:
+    if len(machine["states"]) > MAX_STATES:
+        raise FinalAnswer(f"That language needs {len(machine['states'])} states even after merging "
+                          f"equivalent ones, more than the {MAX_STATES} that can be drawn clearly. "
+                          "Try a smaller number.")
+    return machine
+
+
+def product_nfa(parts: List[dict]) -> dict:
+    """NFA for the intersection of ε-free NFAs: run them side by side (product construction)."""
+    alphabet = parts[0]["alphabet"]
+    start = tuple(p["start"] for p in parts)
+    names, queue = {start: "q0"}, deque([start])
+    trans: Dict[Tuple[str, str], List[str]] = {}
+    while queue:
+        key = queue.popleft()
+        for a in alphabet:
+            options = [p["trans"].get((s, a), []) for p, s in zip(parts, key)]
+            for combo in product(*options):
+                if combo not in names:
+                    if len(names) >= MAX_STATES:
+                        raise FinalAnswer("too large")
+                    names[combo] = f"q{len(names)}"
+                    queue.append(combo)
+                bucket = trans.setdefault((names[key], a), [])
+                if names[combo] not in bucket:
+                    bucket.append(names[combo])
+    accepts = [n for key, n in names.items()
+               if all(s in p["accepts"] for p, s in zip(parts, key))]
+    return {"kind": "NFA", "states": list(names.values()), "alphabet": alphabet[:],
+            "start": "q0", "accepts": accepts, "trans": trans}
+
+
+def eps_union(parts: List[dict]) -> dict:
+    """NFA for the union: a new start state with an ε-move into each part."""
+    states, accepts = ["q0"], []
+    trans: Dict[Tuple[str, str], List[str]] = {("q0", EPS): []}
+    for part in parts:
+        rename = {s: f"q{len(states) + i}" for i, s in enumerate(part["states"])}
+        states += list(rename.values())
+        trans["q0", EPS].append(rename[part["start"]])
+        for (u, a), targets in part["trans"].items():
+            trans[rename[u], a] = [rename[v] for v in targets]
+        accepts += [rename[x] for x in part["accepts"]]
+    return {"kind": "NFA", "states": states, "alphabet": parts[0]["alphabet"][:], "start": "q0",
+            "accepts": accepts, "trans": trans}
+
+
+def finite_language(words: List[str], text: str) -> Condition:
+    """Exactly the given finite set of strings (a trie with a trap state)."""
+    words = set(words)
+    prefixes = {w[:i] for w in words for i in range(len(w) + 1)}
+
+    def step(key, c):
+        nxt = None if key is None else key + c
+        return nxt if nxt in prefixes else None
+    return Condition(text, "", step, lambda key: key in words)
+
+
+POWER = r"((?:[A-Za-z0-9]\s*\^\s*\{?\s*n\s*\}?\s*){2,})"
+
+
+def parse_finite(q: str):
+    """Finite languages: a^n b^n with a bound on n, or an explicit set {ab, ba, aab}."""
+    m = re.search(POWER, q)
+    upper = re.search(r"\bn\s*(<=|≤|<)\s*(\d+)", q)
+    if m and upper:
+        hi = int(upper.group(2)) - (upper.group(1) == "<")
+        lower = (re.search(r"\bn\s*(>=|≥|>)\s*(\d+)", q), re.search(r"(\d+)\s*(<=|≤|<)\s*n\b", q))
+        lo = 0
+        if lower[0]:
+            lo = int(lower[0].group(2)) + (lower[0].group(1) == ">")
+        elif lower[1]:
+            lo = int(lower[1].group(1)) + (lower[1].group(2) == "<")
+        symbols = re.findall(r"([A-Za-z0-9])\s*\^", m.group(1))
+        if hi < lo:
+            return empty_language(), "".join(symbols), m.span()
+        if hi > 12:
+            raise FinalAnswer("That bound gives a machine too large to draw clearly. Try n ≤ 12.")
+        words = ["".join(x * n for x in symbols) for n in range(lo, hi + 1)]
+        shown = ", ".join(w or EPS for w in words[:6]) + (", …" if len(words) > 6 else "")
+        label = "".join(f"{x}ⁿ" for x in symbols)
+        return (finite_language(words, f"w = {label} with {lo} ≤ n ≤ {hi}, i.e. w ∈ {{{shown}}} (finite, so regular)"),
+                "".join(symbols), m.span())
+    m = re.search(r"\{\s*((?:[A-Za-z0-9]+|ε)(?:\s*,\s*(?:[A-Za-z0-9]+|ε))+)\s*\}", q)
+    if m:
+        items = [t.strip() for t in m.group(1).split(",")]
+        if any(len(t) > 1 for t in items):
+            words = ["" if t == EPS else t for t in items]
+            return (finite_language(words, f"w ∈ {{{', '.join(items)}}} (a finite language)"),
+                    "".join(words), m.span())
+    return None
+
+
 def tidy(machine: dict) -> dict:
     """Rename to q0.. and call non-accepting self-loop trap states 'dead'."""
     dead = [s for s in machine["states"] if s not in machine["accepts"]
@@ -950,10 +1084,11 @@ def _from_regex(regex: str, q: str, alphabet: Optional[List[str]], wants_nfa: bo
                     "one start state and one accepting state."]
         return _finish(nfa, f"ε-NFA for {regex}", steps_md, tests)
     dfa, _ = determinize(nfa)
-    machine = tidy(dfa)
+    machine = tidy(_fits(_reduce(dfa)))
     steps_md = [f"**Language:** L({regex}) over {{{sigma}}}",
                 f"**Method:** Thompson's construction gives a {len(nfa['states'])}-state ε-NFA; "
-                f"subset construction turns it into this **{len(machine['states'])}-state DFA**.",
+                f"subset construction gives a {len(dfa['states'])}-state DFA, and merging equivalent "
+                f"states leaves this **{len(machine['states'])}-state DFA** (the fewest possible).",
                 f"**Start:** {machine['start']}  ·  **Final:** {fmt_set(machine['accepts'])}"
                 + ("  ·  **dead** is a trap state." if "dead" in machine["states"] else "")]
     return _finish(machine, f"DFA for {regex}", steps_md + language_notes(machine), tests)
@@ -981,6 +1116,14 @@ def solve(question: str, current: Optional[dict] = None) -> dict:
     regex = find_regex(q)
     if regex and (not found or re.search(r"regular\s+expression|regex|\bR\.?E\.?|form|\bL\s*=", q, re.I)):
         return _from_regex(regex, q, alphabet, wants_nfa)
+
+    finite = parse_finite(q)
+    if finite:
+        cond_f, chars_f, span_f = finite
+        found = [(span_f[0], cond_f, None, chars_f, span_f)]
+        spans.append(span_f)
+        if alphabet and not set(chars_f) <= set(alphabet):
+            alphabet = None
 
     if not found:
         for pattern, build in SPECIAL:
@@ -1013,14 +1156,40 @@ def solve(question: str, current: Optional[dict] = None) -> dict:
         language = f"L = {{ w ∈ {{{', '.join(alphabet)}}}* | {cond.text} }}"
 
         kinds = [f[2] for f in found]
-        if (wants_nfa and len(found) > 1 and all(k in ("contains", "ends", "starts") for k in kinds)
-                and all(c == "or" for c in connectors)):
+        if wants_nfa and len(found) > 1 and all(kinds):
             words = [re.sub(r"[^A-Za-z0-9]", "", f[3]) for f in found]
-            machine, idea = union_nfa(kinds, words, alphabet)
-            steps_md = [f"**Language:** {language}", f"**Idea:** {idea}",
-                        f"**NFA:** {len(machine['states'])} states, start {machine['start']}, "
-                        f"final {fmt_set(machine['accepts'])}."]
-            return _finish(machine, f"NFA: {cond.text}", steps_md, tests)
+            machine = idea = None
+            if all(c == "or" for c in connectors) and all(k in ("contains", "ends", "starts") for k in kinds):
+                machine, idea = union_nfa(kinds, words, alphabet)
+            else:
+                groups, current_group = [], [0]          # AND binds tighter than OR
+                for i, conn in enumerate(connectors, start=1):
+                    if conn == "or":
+                        groups.append(current_group)
+                        current_group = [i]
+                    else:
+                        current_group.append(i)
+                groups.append(current_group)
+                try:
+                    parts = []
+                    for group in groups:
+                        nfas = [classic_nfa(kinds[i], words[i], alphabet) for i in group]
+                        parts.append(nfas[0] if len(nfas) == 1 else product_nfa(nfas))
+                    machine = parts[0] if len(parts) == 1 else eps_union(parts)
+                    if len(machine["states"]) > MAX_STATES:
+                        machine = None
+                    idea = ("product construction: one small NFA per condition runs side by side. "
+                            "Each state stands for one state of every small NFA, and it accepts only "
+                            "when all of them accept (intersection)."
+                            + (" The OR parts are joined by a new start state with ε-moves (union)."
+                               if len(parts) > 1 else ""))
+                except FinalAnswer:
+                    machine = None
+            if machine:
+                steps_md = [f"**Language:** {language}", f"**Idea:** {idea}",
+                            f"**NFA:** {len(machine['states'])} states, start {machine['start']}, "
+                            f"final {fmt_set(machine['accepts'])}."]
+                return _finish(machine, f"NFA: {cond.text}", steps_md, tests)
 
         if wants_nfa and len(found) == 1 and found[0][2]:
             machine = classic_nfa(found[0][2], re.sub(r"[^A-Za-z0-9]", "", found[0][3]), alphabet)
@@ -1039,6 +1208,7 @@ def solve(question: str, current: Optional[dict] = None) -> dict:
 
         try:
             raw = _explore(alphabet, cond.start, cond.step, cond.accept)
+            reduced = _fits(_reduce(raw))
         except FinalAnswer as exc:
             kth = [f[2] for f in found if f[2] and f[2].startswith("kth_end")]
             if kth and len(found) == 1:
@@ -1046,16 +1216,20 @@ def solve(question: str, current: Optional[dict] = None) -> dict:
                 raise FinalAnswer(f"{exc} The DFA needs about 2^{k} states, but an NFA needs only "
                                   f"{k + 1}: ask for an NFA instead (e.g. \"NFA for …\").") from None
             raise
-        machine = tidy(raw)
+        machine = tidy(reduced)
+        merged = (f"; {len(raw['states'])} states were built and equivalent ones merged"
+                  if len(raw["states"]) > len(machine["states"]) else "")
         steps_md = [
             f"**Language:** {language}",
             f"**Construction:** each state remembers just enough of the input to decide "
-            f"*{cond.text}*, giving **{len(machine['states'])} states**.",
+            f"*{cond.text}*{merged}, giving **{len(machine['states'])} states** "
+            "(the fewest possible for this language).",
             f"**Start:** {machine['start']}  ·  **Final:** {fmt_set(machine['accepts'])}"
             + ("  ·  **dead** is a trap state." if "dead" in machine["states"] else ""),
         ]
         if wants_nfa:
-            steps_md.append("Every DFA is also an NFA, so this machine answers the NFA question too.")
+            steps_md.append("This condition has no simpler nondeterministic form here; every DFA is "
+                            "also an NFA, so this machine answers the NFA question too.")
         steps_md += language_notes(machine)
         return _finish(machine, f"DFA: {cond.text}", steps_md, tests)
 
