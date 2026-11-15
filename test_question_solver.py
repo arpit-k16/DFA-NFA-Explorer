@@ -3,7 +3,7 @@ from itertools import product
 import unittest
 
 from automata import PRESETS, machine_from_spec, simulate
-from question_solver import EXAMPLE_QUESTIONS, FinalAnswer, NotRegular, NotUnderstood, solve
+from question_solver import EXAMPLE_QUESTIONS, FinalAnswer, NotRegular, NotUnderstood, answer, solve
 
 
 def words(alphabet, max_len=6):
@@ -249,6 +249,40 @@ class EdgeCaseTests(unittest.TestCase):
         current = machine_from_spec(PRESETS['Ends with "01"'])[0]
         self.assertEqual(solve("is the empty string accepted?", current)["tests"][0]["String"], "ε")
         self.assertFalse(solve("Does the machine accept 101?", current)["spec"])
+
+class GeminiFirstTests(unittest.TestCase):
+    """answer(): Gemini builds the machine, the built-in solver cross-checks it."""
+
+    @staticmethod
+    def gemini(spec_question):
+        def generate(_text):
+            return solve(spec_question)["spec"]
+        return generate
+
+    def test_correct_ai_machine_is_used_and_verified(self):
+        result = answer("strings over {0,1} ending with 01", None, self.gemini("strings over {0,1} ending with 01"))
+        self.assertIn("Gemini, verified", result["title"])
+
+    def test_wrong_ai_machine_is_replaced_by_verified_answer(self):
+        result = answer("strings over {0,1} ending with 01", None, self.gemini("strings over {0,1} ending with 11"))
+        self.assertIn("wrong", result["steps"][0])
+        self.assertTrue(simulate(result["machine"], "101")[1])
+
+    def test_ai_failure_falls_back_and_unknown_wording_uses_ai(self):
+        def broken(_text):
+            raise ValueError("quota exceeded")
+        result = answer("strings over {0,1} ending with 01", None, broken)
+        self.assertIn("quota exceeded", result["steps"][-1])
+        ai_only = answer("strings my teacher likes", None, self.gemini("strings over {a,b} ending with ab"))
+        self.assertIn("could not be cross-checked", ai_only["steps"][-1])
+
+    def test_loaded_machine_and_non_regular_questions_skip_the_ai(self):
+        def must_not_run(_text):
+            raise AssertionError("Gemini should not be called")
+        current = machine_from_spec(PRESETS['Ends with "01"'])[0]
+        self.assertIsNone(answer("Is 1101 accepted?", current, must_not_run)["spec"])
+        with self.assertRaises(NotRegular):
+            answer("DFA for palindromes over {a,b}", None, must_not_run)
 
 if __name__ == "__main__":
     unittest.main()

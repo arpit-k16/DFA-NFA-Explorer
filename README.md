@@ -32,8 +32,12 @@ where it gets stuck, and which branch accepts.
 - Machine insights: reachable, unreachable and dead states, shortest accepted
   string, transition matrix.
 - Import/export machines as JSON; download the diagram as SVG and the trace as CSV.
-- Optional Google Gemini fallback for questions the offline solver does not
-  recognise.
+- **Gemini answers the question box** when `GEMINI_API_KEY` is set (toggle "Use Gemini
+  AI"). Every Gemini machine is cross-checked against the built-in solver on all strings
+  up to length 8: if they agree the answer is marked *verified*, if Gemini is wrong the
+  verified built-in answer is shown with the strings Gemini got wrong. Without a key, or
+  if Gemini fails, the built-in solver answers offline. Questions about the loaded
+  machine and non-regular requests are always answered by the app itself.
 
 ## Technology stack and dependencies
 
@@ -59,7 +63,7 @@ external JS libraries or CDN scripts. Works on Windows, macOS and Linux.
    ```bash
    python -m pip install -r requirements.txt
    ```
-4. (Optional) For the Gemini fallback, create `.streamlit/secrets.toml` with
+4. (Optional) To let Gemini answer the question box, create `.streamlit/secrets.toml` with
    `GEMINI_API_KEY = "your-key"` or set the environment variable
    `GEMINI_API_KEY`. This file is git-ignored; never commit a key.
 
@@ -111,7 +115,7 @@ Same machine as JSON (Import machine / Export machine):
 | `computation_tree.py` | Builds the tree of all branches and classifies each leaf |
 | `regex_to_nfa.py` | Regex parser and Thompson's construction |
 | `question_solver.py` | Understands typed questions and builds DFAs/NFAs from them |
-| `gemini_generator.py` | Optional AI fallback (needs an API key) |
+| `gemini_generator.py` | Sends questions to Google Gemini (needs an API key) |
 | `player.js`, `player.css` | Animated state graph, tape and trace |
 | `tree.js`, `tree.css` | Animated computation tree |
 | `test_*.py` | Automated tests |
@@ -141,7 +145,7 @@ The engine modules have no Streamlit dependency and can be imported on their own
 python -m unittest test_automata test_app test_gemini_generator test_question_solver test_computation_tree test_regex_to_nfa -v
 ```
 
-Expected: `Ran 39 tests … OK`. The tests cover all presets, ε-cycles, the empty
+Expected: `Ran 43 tests … OK`. The tests cover all presets, ε-cycles, the empty
 string, invalid and partial machines, JSON round trips, NFA→DFA equivalence on
 random ε-NFAs, the computation tree against the simulator, Thompson's
 construction against Python's `re`, the question solver (65 phrasings, non-regular requests and error cases)

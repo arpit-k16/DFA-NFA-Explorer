@@ -22,6 +22,11 @@ The machine schema is: {"version":1,"kind":"DFA" or "NFA",
 Use ε only for NFA empty moves. Maximum 64 states and 2048 transition rows.
 Specify the alphabet and empty-string behavior in interpretation. Prefer a
 complete DFA where feasible. Do not claim mathematical verification.
+If the user asks for an NFA, return kind "NFA" (and use ε moves if they ask for an
+ε-NFA or NFA with ε-transitions); if they ask for a DFA, return a complete DFA.
+The user text may end with strings to test ("check 1101, 0110"); they are not
+part of the language description. If no alphabet is given, use {a,b} for
+letters and {0,1} for binary/digits.
 """
 
 

@@ -9,7 +9,7 @@ import streamlit as st
 from gemini_generator import DEFAULT_MODEL, generate
 from computation_tree import accepting_path, build_tree, describe_path
 from regex_to_nfa import RegexError, regex_spec
-from question_solver import EXAMPLE_QUESTIONS, FinalAnswer, NotUnderstood, solve, solve_from_spec
+from question_solver import EXAMPLE_QUESTIONS, FinalAnswer, NotUnderstood, answer
 
 from automata import (
     EPS, PRESETS, DEFAULT_PRESET, analyze_machine, build_machine,
@@ -64,31 +64,23 @@ def use_example(text):
 
 
 def ask_question(question, current):
-    """Solve offline first; fall back to Gemini for unfamiliar languages."""
-    st.session_state.pop("qa_result", None)
-    st.session_state.pop("qa_error", None)
-    st.session_state.pop("qa_info", None)
+    """Gemini builds the machine; the built-in solver cross-checks it (see question_solver.answer)."""
+    for k in ("qa_result", "qa_error", "qa_info"):
+        st.session_state.pop(k, None)
+    api_key = gemini_key() if st.session_state.get("use_gemini", True) else ""
+    model = os.environ.get("GEMINI_MODEL", DEFAULT_MODEL)
+    generator = (lambda text: generate(text, api_key, model)) if api_key else None
     try:
-        result = solve(question, current)
-    except FinalAnswer as answer:
+        with st.spinner("Asking Gemini…" if generator else "Solving…"):
+            result = answer(question, current, generator)
+    except FinalAnswer as reply:
         # A definite answer (e.g. "not regular"): never ask the AI to invent a machine.
-        st.session_state.qa_info = str(answer)
+        st.session_state.qa_info = str(reply)
         return
-    except NotUnderstood as offline_error:
-        api_key = gemini_key()
-        if not api_key:
-            st.session_state.qa_error = (
-                f"{offline_error} The built-in solver handles patterns like *ends with*, "
-                "*starts with*, *contains*, *even/odd number of*, *length*, *divisible by*, "
-                "and *not/and/or* combinations. Add GEMINI_API_KEY to handle any other language.")
-            return
-        try:
-            with st.spinner("Not a standard pattern — asking Gemini…"):
-                spec = generate(question, api_key, os.environ.get("GEMINI_MODEL", DEFAULT_MODEL))
-            result = solve_from_spec(spec, question)
-        except ValueError as exc:
-            st.session_state.qa_error = str(exc)
-            return
+    except NotUnderstood as exc:
+        hint = "" if api_key else " Add GEMINI_API_KEY to .streamlit/secrets.toml to let Gemini answer any wording."
+        st.session_state.qa_error = f"{exc}{hint}"
+        return
     result["question"] = question
     st.session_state.qa_result = result
     if result["spec"] is not None:
@@ -181,6 +173,12 @@ question = st.text_area(
     "Your question", key="question", max_chars=4000, height=90,
     placeholder="Construct a DFA over {0,1} for strings ending with 01 and check 1101, 0110",
     label_visibility="collapsed")
+if gemini_key():
+    st.toggle("Use Gemini AI", value=True, key="use_gemini",
+              help="Gemini builds the machine and the built-in solver double-checks it. "
+                   "Turn off to answer offline.")
+else:
+    st.caption("Gemini is not configured (no GEMINI_API_KEY), so the built-in solver answers.")
 with st.container(horizontal=True):
     if st.button("Solve", type="primary", icon=":material/auto_awesome:",
                  disabled=not question.strip()):
