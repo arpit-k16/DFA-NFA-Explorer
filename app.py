@@ -3,10 +3,14 @@ from pathlib import Path
 import hashlib
 import json
 import os
+try:
+    import tomllib
+except ImportError:  # Python 3.10
+    tomllib = None
 
 import pandas as pd
 import streamlit as st
-from gemini_generator import DEFAULT_MODEL, generate
+import ai_models
 from computation_tree import accepting_path, build_tree, describe_path
 from regex_to_nfa import RegexError, regex_spec
 from question_solver import EXAMPLE_QUESTIONS, FinalAnswer, NotUnderstood, answer
@@ -49,14 +53,46 @@ def load_preset():
     load_spec(PRESETS[st.session_state.preset])
 
 
-def gemini_key():
-    key = os.environ.get("GEMINI_API_KEY", "")
-    if not key:
+def secret(name):
+    """Find a setting in the environment, Streamlit secrets, or the app's own secrets file.
+
+    Streamlit only reads .streamlit/secrets.toml from the folder it was started in, so
+    the last lookup reads the file next to app.py directly.
+    """
+    value = os.environ.get(name, "")
+    if not value:
         try:
-            key = st.secrets.get("GEMINI_API_KEY", "")
-        except st.errors.StreamlitSecretNotFoundError:
-            pass
-    return key
+            value = st.secrets.get(name, "")
+        except Exception:  # no secrets file in the working folder, or it is malformed
+            value = ""
+    if not value:
+        path = _ROOT / ".streamlit" / "secrets.toml"
+        try:
+            if tomllib is None:
+                raise OSError("tomllib needs Python 3.11+")
+            with path.open("rb") as handle:
+                value = tomllib.load(handle).get(name, "")
+        except (OSError, ValueError):
+            value = ""
+    return str(value).strip()
+
+
+def ai_provider():
+    """(label, generate(text)) choosing automatically among the configured AI keys.
+
+    OpenAI is tried first, then Gemini; within each, the newest model the account can use
+    (see ai_models.py). OPENAI_MODEL / GEMINI_MODEL, if set, are tried first.
+    """
+    openai_key, gemini_key = secret("OPENAI_API_KEY"), secret("GEMINI_API_KEY")
+    if not (openai_key or gemini_key):
+        return None, None
+    names = " / ".join(n for n, k in (("OpenAI", openai_key), ("Gemini", gemini_key)) if k)
+
+    def generate_any(text):
+        available = ai_models.providers(openai_key, gemini_key,
+                                        secret("OPENAI_MODEL"), secret("GEMINI_MODEL"))
+        return ai_models.auto_generate(text, available)
+    return names, generate_any
 
 
 def use_example(text):
@@ -64,21 +100,27 @@ def use_example(text):
 
 
 def ask_question(question, current):
-    """Gemini builds the machine; the built-in solver cross-checks it (see question_solver.answer)."""
+    """The AI builds the machine; the built-in solver cross-checks it (see question_solver.answer)."""
     for k in ("qa_result", "qa_error", "qa_info"):
         st.session_state.pop(k, None)
-    api_key = gemini_key() if st.session_state.get("use_gemini", True) else ""
-    model = os.environ.get("GEMINI_MODEL", DEFAULT_MODEL)
-    generator = (lambda text: generate(text, api_key, model)) if api_key else None
+    provider, generator = ai_provider()
+    if not st.session_state.get("use_ai", True):
+        generator = None
     try:
-        with st.spinner("Asking Gemini…" if generator else "Solving…"):
-            result = answer(question, current, generator)
+        with st.spinner(f"Asking {provider}…" if generator else "Solving…"):
+            result = answer(question, current, generator, provider or "AI")
     except FinalAnswer as reply:
         # A definite answer (e.g. "not regular"): never ask the AI to invent a machine.
         st.session_state.qa_info = str(reply)
         return
     except NotUnderstood as exc:
-        hint = "" if api_key else " Add GEMINI_API_KEY to .streamlit/secrets.toml to let Gemini answer any wording."
+        if generator:
+            hint = ""
+        elif provider:
+            hint = " Turn on **Use AI** above to let the AI answer any wording."
+        else:
+            hint = (f" No AI key was found. Put `OPENAI_API_KEY = \"sk-...\"` in "
+                    f"`{_ROOT / '.streamlit' / 'secrets.toml'}` and restart the app.")
         st.session_state.qa_error = f"{exc}{hint}"
         return
     result["question"] = question
@@ -173,12 +215,13 @@ question = st.text_area(
     "Your question", key="question", max_chars=4000, height=90,
     placeholder="Construct a DFA over {0,1} for strings ending with 01 and check 1101, 0110",
     label_visibility="collapsed")
-if gemini_key():
-    st.toggle("Use Gemini AI", value=True, key="use_gemini",
-              help="Gemini builds the machine and the built-in solver double-checks it. "
+_provider, _ = ai_provider()
+if _provider:
+    st.toggle(f"Use AI ({_provider}, best available model)", value=True, key="use_ai",
+              help="The AI builds the machine and the built-in solver double-checks it. "
                    "Turn off to answer offline.")
 else:
-    st.caption("Gemini is not configured (no GEMINI_API_KEY), so the built-in solver answers.")
+    st.caption("No AI key is configured (OPENAI_API_KEY), so the built-in solver answers.")
 with st.container(horizontal=True):
     if st.button("Solve", type="primary", icon=":material/auto_awesome:",
                  disabled=not question.strip()):

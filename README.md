@@ -32,11 +32,14 @@ where it gets stuck, and which branch accepts.
 - Machine insights: reachable, unreachable and dead states, shortest accepted
   string, transition matrix.
 - Import/export machines as JSON; download the diagram as SVG and the trace as CSV.
-- **Gemini answers the question box** when `GEMINI_API_KEY` is set (toggle "Use Gemini
-  AI"). Every Gemini machine is cross-checked against the built-in solver on all strings
-  up to length 8: if they agree the answer is marked *verified*, if Gemini is wrong the
-  verified built-in answer is shown with the strings Gemini got wrong. Without a key, or
-  if Gemini fails, the built-in solver answers offline. Questions about the loaded
+- **AI answers the question box, with automatic model selection** (toggle "Use AI"). The
+  app lists the models your key can use and picks the newest suitable one; if a model is
+  unavailable it tries the next, and if OpenAI fails (bad key, quota) it moves on to Gemini.
+  The model used is shown in the answer title. Every AI machine is
+  cross-checked against the built-in solver on all strings up to length 8: if they agree
+  the answer is marked *verified*, if the AI is wrong the verified built-in answer is shown
+  with the strings it got wrong. Without a key, or if the AI fails, the built-in solver
+  answers offline. Questions about the loaded
   machine and non-regular requests are always answered by the app itself.
 
 ## Technology stack and dependencies
@@ -63,9 +66,13 @@ external JS libraries or CDN scripts. Works on Windows, macOS and Linux.
    ```bash
    python -m pip install -r requirements.txt
    ```
-4. (Optional) To let Gemini answer the question box, create `.streamlit/secrets.toml` with
-   `GEMINI_API_KEY = "your-key"` or set the environment variable
-   `GEMINI_API_KEY`. This file is git-ignored; never commit a key.
+4. (Optional) To let OpenAI answer the question box, create `.streamlit/secrets.toml` with
+   ```toml
+   OPENAI_API_KEY = "sk-..."      # and/or
+   GEMINI_API_KEY = "..."
+   ```
+   (or set them as environment variables). The model is chosen automatically; to force one,
+   add `OPENAI_MODEL = "..."` or `GEMINI_MODEL = "..."` and it is tried first. This file is git-ignored; never commit a key.
 
 ## How to run
 
@@ -115,7 +122,9 @@ Same machine as JSON (Import machine / Export machine):
 | `computation_tree.py` | Builds the tree of all branches and classifies each leaf |
 | `regex_to_nfa.py` | Regex parser and Thompson's construction |
 | `question_solver.py` | Understands typed questions and builds DFAs/NFAs from them |
-| `gemini_generator.py` | Sends questions to Google Gemini (needs an API key) |
+| `ai_models.py` | Chooses the provider and model automatically and falls back on errors |
+| `openai_generator.py` | Sends questions to OpenAI (needs an API key) |
+| `gemini_generator.py` | Shared AI instructions and reply validation; Google Gemini client |
 | `player.js`, `player.css` | Animated state graph, tape and trace |
 | `tree.js`, `tree.css` | Animated computation tree |
 | `test_*.py` | Automated tests |
@@ -142,14 +151,14 @@ The engine modules have no Streamlit dependency and can be imported on their own
 ## Testing
 
 ```bash
-python -m unittest test_automata test_app test_gemini_generator test_question_solver test_computation_tree test_regex_to_nfa -v
+python -m unittest test_automata test_app test_gemini_generator test_openai_generator test_ai_models test_question_solver test_computation_tree test_regex_to_nfa -v
 ```
 
-Expected: `Ran 43 tests … OK`. The tests cover all presets, ε-cycles, the empty
+Expected: `Ran 49 tests … OK`. The tests cover all presets, ε-cycles, the empty
 string, invalid and partial machines, JSON round trips, NFA→DFA equivalence on
 random ε-NFAs, the computation tree against the simulator, Thompson's
 construction against Python's `re`, the question solver (65 phrasings, non-regular requests and error cases)
-against Python oracles, and the whole UI through Streamlit's AppTest. The Gemini tests mock the
+against Python oracles, and the whole UI through Streamlit's AppTest. The OpenAI and Gemini tests mock the
 network, so no key is needed.
 
 ## Known limitations and troubleshooting
@@ -161,7 +170,7 @@ network, so no key is needed.
 - There is no separate tool to minimize a DFA you draw yourself. DFAs built by the question
   box are always reduced to the fewest possible states.
 - The offline question solver understands common textbook phrasings; others need
-  the Gemini key, and AI-generated machines should be checked with test strings.
+  an AI key, and AI-generated machines should be checked with test strings.
 - Dense diagrams: drag nodes, zoom, or switch to the circular layout.
 - *Port 8501 in use:* `python -m streamlit run app.py --server.port 8502`.
 - *ModuleNotFoundError:* re-run `python -m pip install -r requirements.txt` in the
