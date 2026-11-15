@@ -1067,7 +1067,46 @@ def language_notes(machine: dict) -> List[str]:
     return []
 
 
-def _from_regex(regex: str, q: str, alphabet: Optional[List[str]], wants_nfa: bool) -> dict:
+ELLIPSIS = r"(?:\.\s*){2,}|…"
+
+
+def parse_listed_language(q: str):
+    """L = {a, ab, abb, abbb, ...}: find the pattern p r^n s behind an infinite listed set.
+
+    Returns (regex, description, span) or None. Every listed string must fit
+    p + r*(k0 + i) + s for consecutive i, so the guess is checked, not assumed.
+    """
+    m = re.search(r"\{\s*((?:[A-Za-z0-9ε]+\s*,\s*){2,})(?:" + ELLIPSIS + r")\s*(?:,\s*)?\}", q)
+    if not m:
+        return None
+    items = ["" if t.strip() in ("ε", "epsilon") else t.strip()
+             for t in m.group(1).split(",") if t.strip()]
+    if len(items) < 3 or len(set(items)) != len(items):
+        return None
+    first, second = items[0], items[1]
+    d = len(second) - len(first)
+    if d <= 0 or any(len(b) - len(a) != d for a, b in zip(items, items[1:])):
+        return None
+    for p_len in range(len(first) + 1):
+        for s_len in range(len(first) - p_len + 1):
+            p, s_ = first[:p_len], first[len(first) - s_len:]
+            mid0 = first[p_len:len(first) - s_len]
+            r = second[p_len:p_len + d]
+            if not r or len(mid0) % d:
+                continue
+            k0 = len(mid0) // d
+            if all(w == p + r * (k0 + i) + s_ for i, w in enumerate(items)):
+                block = r if len(r) == 1 else f"({r})"
+                regex = f"{p}{block * k0}{block}*{s_}" or f"{block}*"
+                power = f"{r}ⁿ" if len(r) == 1 else f"({r})ⁿ"
+                desc = (f"The listed strings follow the pattern {p}{power}{s_} with n ≥ {k0}, "
+                        f"i.e. the regular expression **{regex}**.")
+                return regex, desc, m.span()
+    return None
+
+
+def _from_regex(regex: str, q: str, alphabet: Optional[List[str]], wants_nfa: bool,
+                note: Optional[str] = None, skip=()) -> dict:
     nfa = regex_to_nfa(regex)
     if alphabet:
         extra = [a for a in nfa["alphabet"] if a not in alphabet]
@@ -1076,16 +1115,17 @@ def _from_regex(regex: str, q: str, alphabet: Optional[List[str]], wants_nfa: bo
                                 f"{{{', '.join(alphabet)}}}.")
         nfa["alphabet"] = alphabet[:]
     sigma = ", ".join(nfa["alphabet"])
-    tests = parse_test_strings(q, nfa["alphabet"], [m.span() for m in re.finditer(re.escape(regex), q)])
+    tests = parse_test_strings(q, nfa["alphabet"],
+                               [m.span() for m in re.finditer(re.escape(regex), q)] + list(skip))
     eps_moves = sum(len(v) for (_, s), v in nfa["trans"].items() if s == EPS)
     if wants_nfa:
-        steps_md = [f"**Language:** L({regex}) over {{{sigma}}}",
+        steps_md = ([note] if note else []) + [f"**Language:** L({regex}) over {{{sigma}}}",
                     f"**Thompson's construction:** {len(nfa['states'])} states, {eps_moves} ε-moves, "
                     "one start state and one accepting state."]
         return _finish(nfa, f"ε-NFA for {regex}", steps_md, tests)
     dfa, _ = determinize(nfa)
     machine = tidy(_fits(_reduce(dfa)))
-    steps_md = [f"**Language:** L({regex}) over {{{sigma}}}",
+    steps_md = ([note] if note else []) + [f"**Language:** L({regex}) over {{{sigma}}}",
                 f"**Method:** Thompson's construction gives a {len(nfa['states'])}-state ε-NFA; "
                 f"subset construction gives a {len(dfa['states'])}-state DFA, and merging equivalent "
                 f"states leaves this **{len(machine['states'])}-state DFA** (the fewest possible).",
@@ -1100,7 +1140,7 @@ def _from_regex(regex: str, q: str, alphabet: Optional[List[str]], wants_nfa: bo
 
 def solve(question: str, current: Optional[dict] = None) -> dict:
     """Return a result dict, or raise NotUnderstood."""
-    q = normalize(" ".join(question.strip().split()))
+    q = normalize(" ".join(question.replace("\\{", "{").replace("\\}", "}").strip().split()))
     if not q:
         raise NotUnderstood("Type a question first.")
     lower = q.lower()
@@ -1112,6 +1152,12 @@ def solve(question: str, current: Optional[dict] = None) -> dict:
     spans = [f[4] for f in found] + [m.span() for m in re.finditer(r"\{[^{}]*\}", q)]
     wants_nfa = bool(re.search(r"\b(?:ε|e|epsilon|lambda)?-?\s?nfa\b|non-?deterministic", lower)
                      and not re.search(r"\bdfa\b", lower))
+
+    listed = parse_listed_language(q)
+    if listed:
+        regex, note, span = listed
+        over = re.search(r"\bover\b|\balphabet\b|Σ", q)
+        return _from_regex(regex, q, alphabet if over else None, wants_nfa, note, [span])
 
     regex = find_regex(q)
     if regex and (not found or re.search(r"regular\s+expression|regex|\bR\.?E\.?|form|\bL\s*=", q, re.I)):

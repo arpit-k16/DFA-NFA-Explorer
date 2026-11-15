@@ -171,6 +171,10 @@ class EdgeCaseTests(unittest.TestCase):
         ("0^n1^n where 1 <= n < 4", "01", lambda w: w in ("01", "0011", "000111")),
         ("DFA for L = {ab, ba, aab}", "ab", lambda w: w in ("ab", "ba", "aab")),
         ("binary numbers divisible by 100", "01", lambda w: int(w or "0", 2) % 100 == 0),
+        ("Construct an NFA with ε-transitions that accepts the language: L = \\{a, ab, abb, abbb,...}", "ab",
+         lambda w: w[:1] == "a" and set(w[1:]) <= {"b"}),
+        ("L = {b, ab, aab, aaab, ...}", "ab", lambda w: w[-1:] == "b" and set(w[:-1]) <= {"a"}),
+        ("L = {01, 0101, 010101, ...}", "01", lambda w: len(w) > 0 and w == "01" * (len(w) // 2)),
     ]
 
     def test_cases_match_oracle(self):
